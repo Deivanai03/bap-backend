@@ -1,10 +1,44 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
+import { createApiResponse, createErrorResponse } from '../../../../lib/api/response';
 import { verifyMagicLinkAndCreateSession } from '../../../../lib/auth/magic-link';
 import { extractDeviceInfo } from '../../../../middleware/auth';
 import { logAuditEvent } from '../../../../lib/audit/logger';
 import { apiRateLimit } from '../../../../lib/rate-limit';
 import { z } from 'zod';
 
+/**
+ * @swagger
+ * /api/auth/verify-magic-link:
+ *   post:
+ *     summary: Verify magic link token
+ *     description: Verify magic link token and create user session with JWT
+ *     tags: [Authentication]
+ *     security: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - token
+ *             properties:
+ *               token:
+ *                 type: string
+ *                 example: abc123def456
+ *                 description: Magic link token from email
+ *     responses:
+ *       200:
+ *         description: Authentication successful, returns JWT token
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiResponse'
+ *       400:
+ *         description: Invalid or expired token
+ *       429:
+ *         description: Rate limit exceeded
+ */
 const schema = z.object({
   token: z.string().min(1, 'Token is required').trim(),
 });
@@ -14,7 +48,7 @@ export async function POST(request: NextRequest) {
     // Rate limiting
     const rateLimitResult = await apiRateLimit(request);
     if (!rateLimitResult.success) {
-      return NextResponse.json({ success: false, error: 'Too many requests' }, { status: 429 });
+      return createErrorResponse('Too many requests', 429);
     }
 
     const body = await request.json();
@@ -23,13 +57,10 @@ export async function POST(request: NextRequest) {
     const deviceInfo = extractDeviceInfo(request);
     const sessionResult = await verifyMagicLinkAndCreateSession(token, deviceInfo);
     
-    const response = NextResponse.json({
-      success: true,
-      data: {
-        jwt_token: sessionResult.jwt_token,
-        expires_at: sessionResult.expires_at.toISOString(),
-        user: sessionResult.user
-      }
+    const response = createApiResponse({
+      jwt_token: sessionResult.jwt_token,
+      expires_at: sessionResult.expires_at.toISOString(),
+      user: sessionResult.user
     });
 
     // Set HTTP-only cookies for session and refresh tokens
@@ -80,12 +111,6 @@ export async function POST(request: NextRequest) {
       request
     });
 
-    return NextResponse.json({
-      success: false,
-      error: {
-        code: error.code || 'UNKNOWN_ERROR',
-        message: error.message
-      }
-    }, { status: 400 });
+    return createErrorResponse(error.message, 400);
   }
 }

@@ -9,11 +9,13 @@ export async function checkMagicLinkRateLimit(email: string): Promise<{ success:
   const now = Date.now();
   
   // Clean up expired entries
-  for (const [k, v] of emailRateLimitStore.entries()) {
-    if (v.resetTime < now) {
-      emailRateLimitStore.delete(k);
+  const keysToDelete: string[] = [];
+  emailRateLimitStore.forEach((value, k) => {
+    if (value.resetTime < now) {
+      keysToDelete.push(k);
     }
-  }
+  });
+  keysToDelete.forEach(k => emailRateLimitStore.delete(k));
   
   const key = `magic_link:${email.toLowerCase()}`;
   const current = emailRateLimitStore.get(key);

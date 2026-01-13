@@ -13,14 +13,15 @@ export function createRateLimit(config: RateLimitConfig) {
   return async (request: NextRequest): Promise<{ success: boolean; remaining: number; resetTime: number }> => {
     const key = config.keyGenerator ? config.keyGenerator(request) : getDefaultKey(request);
     const now = Date.now();
-    const windowStart = now - config.windowMs;
     
     // Clean up expired entries
-    for (const [k, v] of rateLimitStore.entries()) {
-      if (v.resetTime < now) {
-        rateLimitStore.delete(k);
+    const keysToDelete: string[] = [];
+    rateLimitStore.forEach((value, k) => {
+      if (value.resetTime < now) {
+        keysToDelete.push(k);
       }
-    }
+    });
+    keysToDelete.forEach(k => rateLimitStore.delete(k));
     
     const current = rateLimitStore.get(key);
     

@@ -7,6 +7,62 @@ import { logAuditEvent } from '../../../../lib/audit/logger';
 import { apiRateLimit } from '../../../../lib/rate-limit';
 import { z } from 'zod';
 
+/**
+ * @swagger
+ * /api/auth/register:
+ *   post:
+ *     summary: Register new organization and user
+ *     description: Create a new organization with the first user as owner
+ *     tags: [Authentication]
+ *     security: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - full_name
+ *               - email
+ *               - organization_name
+ *               - home_region
+ *               - billing_country
+ *               - currency
+ *             properties:
+ *               full_name:
+ *                 type: string
+ *                 example: John Doe
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 example: <your-email@gmail.com>
+ *               organization_name:
+ *                 type: string
+ *                 example: Acme Corp
+ *               home_region:
+ *                 type: string
+ *                 enum: [IN, EU, US, ROW, SEA]
+ *                 example: IN
+ *               billing_country:
+ *                 type: string
+ *                 example: IN
+ *               currency:
+ *                 type: string
+ *                 example: INR
+ *     responses:
+ *       201:
+ *         description: Organization and user created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiResponse'
+ *       400:
+ *         description: Invalid request data
+ *       409:
+ *         description: Email already exists
+ *       429:
+ *         description: Rate limit exceeded
+ */
 const schema = z.object({
   full_name: z.string().min(2, 'Name must be at least 2 characters').max(255).trim(),
   email: z.string().email('Invalid email format').toLowerCase().trim(),

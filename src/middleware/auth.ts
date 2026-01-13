@@ -19,8 +19,11 @@ export async function authenticateRequest(request: NextRequest): Promise<Session
     const token = authHeader.slice(7);
     const payload = await verifyToken(token);
     
-    if (payload && payload.sessionToken) {
-      // Validate the session token from JWT
+    if (payload && payload.sessionToken && payload.orgId) {
+      // Set tenant context BEFORE validating session
+      await setTenantContext(payload.orgId as string);
+      
+      // Now validate the session token from JWT
       sessionData = await validateSession(payload.sessionToken as string);
     }
   }
@@ -28,14 +31,16 @@ export async function authenticateRequest(request: NextRequest): Promise<Session
   // Fallback to session token from cookie
   if (!sessionData && sessionCookie) {
     sessionData = await validateSession(sessionCookie);
+    
+    // Set tenant context after getting session data
+    if (sessionData) {
+      await setTenantContext(sessionData.org_id);
+    }
   }
 
   if (!sessionData) {
     throw new AuthError('Invalid or expired session', 'INVALID_SESSION', 401);
   }
-
-  // Set tenant context for RLS
-  await setTenantContext(sessionData.org_id);
 
   return sessionData;
 }

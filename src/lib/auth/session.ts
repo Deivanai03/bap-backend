@@ -17,56 +17,58 @@ export async function createSession(sessionData: SessionData): Promise<CreateSes
 
   await setTenantContext(sessionData.org_id);
 
-  // Create session record
-  const [session] = await db.insert(user_sessions).values({
-    user_id: sessionData.user_id,
-    org_id: sessionData.org_id,
-    session_token: sessionToken,
-    refresh_token: hashedRefreshToken,
-    device_type: sessionData.device_type,
-    device_name: sessionData.device_name,
-    os: sessionData.os,
-    browser: sessionData.browser,
-    ip_address: sessionData.ip_address,
-    user_agent: sessionData.user_agent,
-    location: sessionData.location,
-    expires_at: expiresAt,
-  }).returning();
+  return await db.transaction(async (tx) => {
+    // Create session record
+    const [session] = await tx.insert(user_sessions).values({
+      user_id: sessionData.user_id,
+      org_id: sessionData.org_id,
+      session_token: sessionToken,
+      refresh_token: hashedRefreshToken,
+      device_type: sessionData.device_type,
+      device_name: sessionData.device_name,
+      os: sessionData.os,
+      browser: sessionData.browser,
+      ip_address: sessionData.ip_address,
+      user_agent: sessionData.user_agent,
+      location: sessionData.location,
+      expires_at: expiresAt,
+    }).returning();
 
-  // Update user last login
-  await db.update(users)
-    .set({
-      last_login_at: new Date(),
-      last_active_at: new Date(),
-      login_count: sql`${users.login_count} + 1`,
-    })
-    .where(eq(users.id, sessionData.user_id));
+    // Update user last login
+    await tx.update(users)
+      .set({
+        last_login_at: new Date(),
+        last_active_at: new Date(),
+        login_count: sql`${users.login_count} + 1`,
+      })
+      .where(eq(users.id, sessionData.user_id));
 
-  // Get user data for response
-  const [user] = await db.select({
-    id: users.id,
-    email: users.email,
-    full_name: users.full_name,
-    role: users.role,
-    org_id: users.org_id,
-  }).from(users).where(eq(users.id, sessionData.user_id));
+    // Get user data for response
+    const [user] = await tx.select({
+      id: users.id,
+      email: users.email,
+      full_name: users.full_name,
+      role: users.role,
+      org_id: users.org_id,
+    }).from(users).where(eq(users.id, sessionData.user_id));
 
-  // Create JWT token for API requests (15 minutes)
-  const jwtToken = await signToken({
-    userId: user.id,
-    orgId: user.org_id,
-    email: user.email,
-    role: user.role,
-    sessionToken: sessionToken,
-  }, '15m');
+    // Create JWT token for API requests (24 hours)
+    const jwtToken = await signToken({
+      userId: user.id,
+      orgId: user.org_id,
+      email: user.email,
+      role: user.role,
+      sessionToken: sessionToken,
+    }, '24h');
 
-  return {
-    session_token: sessionToken,
-    refresh_token: refreshToken,
-    jwt_token: jwtToken,
-    expires_at: expiresAt,
-    user,
-  };
+    return {
+      session_token: sessionToken,
+      refresh_token: refreshToken,
+      jwt_token: jwtToken,
+      expires_at: expiresAt,
+      user,
+    };
+  });
 }
 
 export async function validateSession(sessionToken: string): Promise<SessionData | null> {

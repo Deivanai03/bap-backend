@@ -86,6 +86,7 @@ export async function verifyMagicLinkAndCreateSession(
   
   await setTenantContext(userData.org_id);
   
+  // Clear magic link token first
   await db.update(users)
     .set({
       magic_link_token: null,
@@ -94,6 +95,7 @@ export async function verifyMagicLinkAndCreateSession(
     })
     .where(eq(users.id, userData.id));
   
+  // Create session (already has its own transaction)
   const sessionResult = await createSession({
     user_id: userData.id,
     org_id: userData.org_id,

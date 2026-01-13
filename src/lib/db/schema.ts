@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, uuid, varchar, boolean, timestamp, jsonb, text, integer, inet, unique, char } from "drizzle-orm/pg-core"; 
+import { pgTable, uuid, varchar, boolean, timestamp, jsonb, text, integer, inet, unique, char, decimal, date } from "drizzle-orm/pg-core"; 
 
 const timestamptz = (name: string) => timestamp(name, { withTimezone: true });
 
@@ -25,7 +25,7 @@ export const organizations = pgTable('organizations', {
     billing_address: jsonb('billing_address'),
 
     // PLAN & LIMITS
-    plan_tier: varchar('plan_tier', { length: 20 }).default('INDIVIDUAL').notNull(),
+    plan_tier: varchar('plan_tier', { length: 20 }).default('FREE').notNull(),
     is_trial: boolean('is_trial').default(false).notNull(),
     trial_ends_at: timestamptz('trial_ends_at').default(sql`NOW()`).notNull(),
 
@@ -52,7 +52,7 @@ export const organizations = pgTable('organizations', {
 }, (table) => ({
     // Check constraints
     chkOrgStatus: sql`CONSTRAINT chk_org_status CHECK (status IN ('active', 'suspended', 'deleted'))`,
-    chkPlanTier: sql`CONSTRAINT chk_plan_tier CHECK (plan_tier IN ('INDIVIDUAL', 'BUSINESS', 'ENTERPRISE'))`,
+    chkPlanTier: sql`CONSTRAINT chk_plan_tier CHECK (plan_tier IN ('FREE', 'PRO', 'BUSINESS', 'ENTERPRISE'))`,
     chkHomeRegion: sql`CONSTRAINT chk_home_region CHECK (home_region IN ('IN', 'EU', 'US', 'ROW', 'SEA'))`,
 }));
 
@@ -185,3 +185,220 @@ export const audit_events = pgTable('audit_events', {
     // TIMESTAMP
     created_at: timestamptz('created_at').defaultNow().notNull(),
 });
+
+// Plans Table
+export const plans = pgTable('plans', {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    
+    // IDENTITY
+    name: varchar('name', { length: 100 }).notNull(),
+    slug: varchar('slug', { length: 50 }).notNull().unique(),
+    display_name: varchar('display_name', { length: 255 }),
+    description: text('description'),
+    
+    // PRICING
+    base_currency: char('base_currency', { length: 3 }).notNull(),
+    billing_period: varchar('billing_period', { length: 20 }).notNull(),
+    
+    // STRIPE INTEGRATION
+    stripe_product_id: varchar('stripe_product_id', { length: 255 }),
+    stripe_prices: jsonb('stripe_prices').notNull(),
+    
+    // FEATURES & LIMITS
+    features: jsonb('features').notNull(),
+    limits: jsonb('limits').notNull(),
+    
+    // PLAN TIER
+    tier: varchar('tier', { length: 20 }).notNull(),
+    is_public: boolean('is_public').default(true).notNull(),
+    
+    // TRIAL
+    trial_days: integer('trial_days').default(0),
+    
+    // STATUS
+    is_active: boolean('is_active').default(true).notNull(),
+    archived_at: timestamptz('archived_at'),
+    
+    // ORDERING
+    display_order: integer('display_order').default(0),
+    
+    // TIMESTAMPS
+    created_at: timestamptz('created_at').defaultNow().notNull(),
+    updated_at: timestamptz('updated_at').defaultNow().notNull(),
+}, (table) => ({
+    chkPlanTier: sql`CONSTRAINT chk_plan_tier CHECK (tier IN ('FREE', 'PRO', 'BUSINESS', 'ENTERPRISE'))`,
+    chkBillingPeriod: sql`CONSTRAINT chk_billing_period CHECK (billing_period IN ('monthly', 'yearly'))`,
+}));
+
+// Subscriptions Table
+export const subscriptions = pgTable('subscriptions', {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    
+    // ORGANIZATION
+    org_id: uuid('org_id').references(() => organizations.id, { onDelete: 'cascade' }).notNull(),
+    
+    // PLAN
+    plan_id: uuid('plan_id').references(() => plans.id).notNull(),
+    
+    // STRIPE
+    stripe_subscription_id: varchar('stripe_subscription_id', { length: 255 }).unique(),
+    stripe_customer_id: varchar('stripe_customer_id', { length: 255 }).notNull(),
+    
+    // BILLING
+    currency: char('currency', { length: 3 }).notNull(),
+    amount_excl_tax: decimal('amount_excl_tax', { precision: 10, scale: 2 }).notNull(),
+    tax_rate: decimal('tax_rate', { precision: 5, scale: 4 }).default('0'),
+    amount_incl_tax: decimal('amount_incl_tax', { precision: 10, scale: 2 }).notNull(),
+    
+    // PERIOD
+    current_period_start: timestamptz('current_period_start').notNull(),
+    current_period_end: timestamptz('current_period_end').notNull(),
+    billing_cycle_anchor: timestamptz('billing_cycle_anchor'),
+    
+    // STATUS
+    status: varchar('status', { length: 20 }).default('active').notNull(),
+    cancel_at_period_end: boolean('cancel_at_period_end').default(false).notNull(),
+    canceled_at: timestamptz('canceled_at'),
+    cancellation_reason: text('cancellation_reason'),
+    
+    // TRIAL
+    trial_start: timestamptz('trial_start'),
+    trial_end: timestamptz('trial_end'),
+    
+    // PAYMENT
+    default_payment_method: varchar('default_payment_method', { length: 255 }),
+    collection_method: varchar('collection_method', { length: 20 }).default('charge_automatically'),
+    
+    // TIMESTAMPS
+    created_at: timestamptz('created_at').defaultNow().notNull(),
+    updated_at: timestamptz('updated_at').defaultNow().notNull(),
+    ended_at: timestamptz('ended_at'),
+}, (table) => ({
+    chkSubscriptionStatus: sql`CONSTRAINT chk_subscription_status CHECK (status IN ('active', 'trialing', 'past_due', 'canceled', 'unpaid', 'incomplete'))`,
+    chkCollectionMethod: sql`CONSTRAINT chk_collection_method CHECK (collection_method IN ('charge_automatically', 'send_invoice'))`,
+}));
+
+// Payment Methods Table
+export const payment_methods = pgTable('payment_methods', {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    
+    // ORGANIZATION
+    org_id: uuid('org_id').references(() => organizations.id, { onDelete: 'cascade' }).notNull(),
+    user_id: uuid('user_id').references(() => users.id).notNull(),
+    
+    // STRIPE
+    stripe_payment_method_id: varchar('stripe_payment_method_id', { length: 255 }).notNull().unique(),
+    
+    // METHOD DETAILS
+    type: varchar('type', { length: 20 }).notNull(),
+    
+    // CARD (if type = 'card')
+    card_brand: varchar('card_brand', { length: 20 }),
+    card_last4: varchar('card_last4', { length: 4 }),
+    card_exp_month: integer('card_exp_month'),
+    card_exp_year: integer('card_exp_year'),
+    
+    // BANK (if type = 'bank_account')
+    bank_name: varchar('bank_name', { length: 100 }),
+    bank_last4: varchar('bank_last4', { length: 4 }),
+    
+    // STATUS
+    is_default: boolean('is_default').default(false).notNull(),
+    is_verified: boolean('is_verified').default(false).notNull(),
+    
+    // BILLING ADDRESS
+    billing_address: jsonb('billing_address'),
+    
+    // TIMESTAMPS
+    created_at: timestamptz('created_at').defaultNow().notNull(),
+    updated_at: timestamptz('updated_at').defaultNow().notNull(),
+    deleted_at: timestamptz('deleted_at'),
+}, (table) => ({
+    chkPaymentType: sql`CONSTRAINT chk_payment_type CHECK (type IN ('card', 'bank_account', 'upi'))`,
+}));
+
+// Invoices Table
+export const invoices = pgTable('invoices', {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    
+    // ORGANIZATION
+    org_id: uuid('org_id').references(() => organizations.id, { onDelete: 'cascade' }).notNull(),
+    subscription_id: uuid('subscription_id').references(() => subscriptions.id),
+    
+    // STRIPE
+    stripe_invoice_id: varchar('stripe_invoice_id', { length: 255 }).unique(),
+    stripe_charge_id: varchar('stripe_charge_id', { length: 255 }),
+    
+    // INVOICE DETAILS
+    invoice_number: varchar('invoice_number', { length: 100 }).notNull().unique(),
+    
+    // AMOUNTS
+    currency: char('currency', { length: 3 }).notNull(),
+    subtotal: decimal('subtotal', { precision: 10, scale: 2 }).notNull(),
+    tax_amount: decimal('tax_amount', { precision: 10, scale: 2 }).default('0'),
+    total: decimal('total', { precision: 10, scale: 2 }).notNull(),
+    amount_paid: decimal('amount_paid', { precision: 10, scale: 2 }).default('0'),
+    amount_due: decimal('amount_due', { precision: 10, scale: 2 }).default('0'),
+    
+    // TAX DETAILS
+    tax_profile: varchar('tax_profile', { length: 20 }),
+    tax_id: varchar('tax_id', { length: 100 }),
+    tax_breakdown: jsonb('tax_breakdown'),
+    
+    // BILLING ADDRESS (snapshot at invoice time)
+    billing_country: char('billing_country', { length: 2 }).notNull(),
+    billing_address: jsonb('billing_address'),
+    
+    // LINE ITEMS
+    line_items: jsonb('line_items').notNull(),
+    
+    // STATUS
+    status: varchar('status', { length: 20 }).notNull(),
+    
+    // DATES
+    issued_at: timestamptz('issued_at').notNull(),
+    due_at: timestamptz('due_at'),
+    paid_at: timestamptz('paid_at'),
+    voided_at: timestamptz('voided_at'),
+    
+    // PAYMENT
+    payment_method: varchar('payment_method', { length: 50 }),
+    payment_intent_id: varchar('payment_intent_id', { length: 255 }),
+    
+    // FILES
+    pdf_url: text('pdf_url'),
+    
+    // TIMESTAMPS
+    created_at: timestamptz('created_at').defaultNow().notNull(),
+    updated_at: timestamptz('updated_at').defaultNow().notNull(),
+}, (table) => ({
+    chkInvoiceStatus: sql`CONSTRAINT chk_invoice_status CHECK (status IN ('draft', 'open', 'paid', 'void', 'uncollectible'))`,
+}));
+
+// Usage Tracking Table
+export const usage_tracking = pgTable('usage_tracking', {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    
+    // ORGANIZATION
+    org_id: uuid('org_id').references(() => organizations.id, { onDelete: 'cascade' }).notNull(),
+    user_id: uuid('user_id').references(() => users.id),
+    
+    // METRIC
+    metric_name: varchar('metric_name', { length: 100 }).notNull(),
+    metric_value: decimal('metric_value', { precision: 15, scale: 4 }).notNull(),
+    unit: varchar('unit', { length: 20 }),
+    
+    // PERIOD
+    period_start: date('period_start').notNull(),
+    period_end: date('period_end').notNull(),
+    
+    // METADATA
+    metadata: jsonb('metadata'),
+    
+    // TIMESTAMPS
+    recorded_at: timestamptz('recorded_at').defaultNow().notNull(),
+    created_at: timestamptz('created_at').defaultNow().notNull(),
+    updated_at: timestamptz('updated_at').defaultNow().notNull(),
+}, (table) => ({
+    chkMetricValue: sql`CONSTRAINT chk_metric_value CHECK (metric_value >= 0)`,
+}));

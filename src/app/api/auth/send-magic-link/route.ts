@@ -6,6 +6,41 @@ import { logAuditEvent } from '../../../../lib/audit/logger';
 import { checkMagicLinkRateLimit } from '../../../../lib/rate-limit/magic-link';
 import { z } from 'zod';
 
+/**
+ * @swagger
+ * /api/auth/send-magic-link:
+ *   post:
+ *     summary: Send magic link to email
+ *     description: Send a magic link authentication email to the user
+ *     tags: [Authentication]
+ *     security: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 example: <your-email@gmail.com>
+ *     responses:
+ *       200:
+ *         description: Magic link sent successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiResponse'
+ *       400:
+ *         description: Invalid email or validation error
+ *       404:
+ *         description: User not found
+ *       429:
+ *         description: Rate limit exceeded
+ */
 const schema = z.object({
   email: z.string().email('Invalid email format').toLowerCase().trim(),
 });
