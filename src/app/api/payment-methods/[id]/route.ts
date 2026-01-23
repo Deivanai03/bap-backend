@@ -4,8 +4,13 @@ import { payment_methods } from '../../../../lib/db/schema';
 import { eq, and, isNull } from 'drizzle-orm';
 import { withAuth, AuthenticatedRequest } from '../../../../middleware/auth';
 import { createApiResponse, createErrorResponse } from '../../../../lib/api/response';
+import { handleOptions } from '../../../../lib/api/cors';
 import { logAuditEvent } from '../../../../lib/audit/logger';
 import { apiRateLimit } from '../../../../lib/rate-limit';
+
+export async function OPTIONS() {
+  return handleOptions();
+}
 
 /**
  * @swagger
@@ -52,13 +57,16 @@ async function deletePaymentMethod(request: AuthenticatedRequest) {
     // Path: /api/payment-methods/[id] -> segments: ['api', 'payment-methods', 'id']
     const paymentMethodId = pathSegments[2];
 
-    // Validate UUID format
+    // Validate payment method ID format (UUID or Stripe PM ID)
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    if (!paymentMethodId || !uuidRegex.test(paymentMethodId)) {
+    const stripeRegex = /^pm_[a-zA-Z0-9]+$/;
+    if (!paymentMethodId || (!uuidRegex.test(paymentMethodId) && !stripeRegex.test(paymentMethodId))) {
       return createErrorResponse('Invalid payment method ID format', 400);
     }
 
     // Get payment method to verify ownership and existence
+    const isUUID = uuidRegex.test(paymentMethodId);
+    
     const paymentMethod = await db
       .select({
         id: payment_methods.id,
@@ -71,7 +79,9 @@ async function deletePaymentMethod(request: AuthenticatedRequest) {
       .from(payment_methods)
       .where(
         and(
-          eq(payment_methods.id, paymentMethodId),
+          isUUID 
+            ? eq(payment_methods.id, paymentMethodId)
+            : eq(payment_methods.stripe_payment_method_id, paymentMethodId),
           eq(payment_methods.org_id, request.user.org_id),
           isNull(payment_methods.deleted_at)
         )
@@ -107,7 +117,11 @@ async function deletePaymentMethod(request: AuthenticatedRequest) {
         is_default: false, // Remove default status when deleting
         updated_at: new Date(),
       })
-      .where(eq(payment_methods.id, paymentMethodId))
+      .where(
+        isUUID 
+          ? eq(payment_methods.id, paymentMethodId)
+          : eq(payment_methods.stripe_payment_method_id, paymentMethodId)
+      )
       .returning();
 
     // If this was the default payment method, set another one as default
@@ -140,7 +154,7 @@ async function deletePaymentMethod(request: AuthenticatedRequest) {
       actor_type: 'user',
       actor_id: request.user.user_id,
       resource_type: 'payment_method',
-      resource_id: paymentMethodId,
+      resource_id: paymentMethodData.id,
       action: 'delete',
       description: `User deleted payment method (${paymentMethodData.card_brand} ****${paymentMethodData.card_last4})`,
       metadata: { 

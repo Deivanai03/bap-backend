@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { createApiResponse, createErrorResponse } from '../../../../lib/api/response';
-import { verifyMagicLinkAndCreateSession } from '../../../../lib/auth/magic-link';
+import { handleOptions } from '../../../../lib/api/cors';
+import { verifyTokenAndCreateSession } from '../../../../lib/auth/jwt-magic-link';
 import { extractDeviceInfo } from '../../../../middleware/auth';
 import { logAuditEvent } from '../../../../lib/audit/logger';
 import { apiRateLimit } from '../../../../lib/rate-limit';
@@ -11,7 +12,7 @@ import { z } from 'zod';
  * /api/auth/verify-magic-link:
  *   post:
  *     summary: Verify magic link token
- *     description: Verify magic link token and create user session with JWT
+ *     description: Verify magic link token for both registration and login, creates user account if registration token, and creates session
  *     tags: [Authentication]
  *     security: []
  *     requestBody:
@@ -41,7 +42,15 @@ import { z } from 'zod';
  */
 const schema = z.object({
   token: z.string().min(1, 'Token is required').trim(),
+  device_data: z.object({
+    device_id: z.string().optional(),
+    user_agent: z.string().optional(),
+  }).optional(),
 });
+
+export async function OPTIONS() {
+  return handleOptions();
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -52,10 +61,10 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { token } = schema.parse(body);
+    const { token, device_data } = schema.parse(body);
     
-    const deviceInfo = extractDeviceInfo(request);
-    const sessionResult = await verifyMagicLinkAndCreateSession(token, deviceInfo);
+    const deviceInfo = extractDeviceInfo(request, device_data);
+    const sessionResult = await verifyTokenAndCreateSession(token, deviceInfo);
     
     const response = createApiResponse({
       jwt_token: sessionResult.jwt_token,
@@ -74,6 +83,15 @@ export async function POST(request: NextRequest) {
 
     response.cookies.set('refresh_token', sessionResult.refresh_token, {
       httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 30 * 24 * 60 * 60, // 30 days
+      path: '/'
+    });
+
+    // Set user plan tier cookie for middleware
+    response.cookies.set('user_plan_tier', sessionResult.user.organization.plan_tier, {
+      httpOnly: false, // Allow client-side access
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'strict',
       maxAge: 30 * 24 * 60 * 60, // 30 days

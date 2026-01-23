@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { stripe } from '../../../../lib/stripe';
 import { createApiResponse, createErrorResponse } from '../../../../lib/api/response';
+import { handleOptions } from '../../../../lib/api/cors';
 import { apiRateLimit } from '../../../../lib/rate-limit';
 import { db } from '../../../../lib/db';
 import { subscriptions, invoices, audit_events, organizations } from '../../../../lib/db/schema';
@@ -44,6 +45,10 @@ import { generateInvoicePDF } from '../../../../lib/services/pdf';
  *         description: Webhook secret not configured
  */
 const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET!;
+
+export async function OPTIONS() {
+  return handleOptions();
+}
 
 export async function POST(request: NextRequest) {
   // Rate limiting for webhook endpoint

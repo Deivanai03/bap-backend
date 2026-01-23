@@ -1,10 +1,13 @@
 import { NextRequest } from 'next/server';
-import { createOrganization } from '../../../../lib/services/organization';
-import { generateMagicLink } from '../../../../lib/auth/magic-link';
+import { generateRegistrationToken } from '../../../../lib/auth/jwt-magic-link';
 import { sendMagicLinkEmail } from '../../../../lib/email';
 import { createApiResponse, createErrorResponse } from '../../../../lib/api/response';
+import { handleOptions } from '../../../../lib/api/cors';
 import { logAuditEvent } from '../../../../lib/audit/logger';
 import { apiRateLimit } from '../../../../lib/rate-limit';
+import { db } from '../../../../lib/db';
+import { users } from '../../../../lib/db/schema';
+import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 
 /**
@@ -74,6 +77,10 @@ const schema = z.object({
   currency: z.string().length(3, 'Currency must be 3 characters').toUpperCase(),
 });
 
+export async function OPTIONS() {
+  return handleOptions();
+}
+
 export async function POST(request: NextRequest) {
   try {
     // Rate limiting
@@ -85,42 +92,43 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const data = schema.parse(body);
     
-    // Create organization and owner
-    const { organization, owner } = await createOrganization({
-      name: data.organization_name,
-      billing_email: data.email,
+    // Check if user already exists with this email
+    const [existingUser] = await db.select({ id: users.id })
+      .from(users)
+      .where(eq(users.email, data.email))
+      .limit(1);
+    
+    if (existingUser) {
+      return createErrorResponse('User already exists with this email. Please use magic link to sign in.', 409);
+    }
+    
+    // Generate JWT token with registration data
+    const token = await generateRegistrationToken({
+      email: data.email,
+      full_name: data.full_name,
+      organization_name: data.organization_name,
       home_region: data.home_region,
       billing_country: data.billing_country,
-      currency: data.currency,
-      owner_email: data.email,
-      owner_name: data.full_name,
+      currency: data.currency
     });
-
-    // Generate magic link for email verification
-    const token = await generateMagicLink(data.email);
-    const magicLink = `${process.env.NEXTAUTH_URL}/api/auth/verify-magic-link?token=${token}`;
+    
+    const magicLink = `${process.env.FRONTEND_URL}/verify-email?token=${token}`;
     
     await sendMagicLinkEmail(data.email, magicLink);
 
     // Audit log
     await logAuditEvent({
-      org_id: organization.id,
-      user_id: owner.id,
-      event_type: 'org.created',
-      event_category: 'org',
+      event_type: 'auth.registration_initiated',
+      event_category: 'auth',
       actor_type: 'user',
-      actor_id: owner.id,
-      resource_type: 'organization',
-      resource_id: organization.id,
-      action: 'created',
-      description: `Organization "${data.organization_name}" created with owner ${data.email}`,
-      metadata: { home_region: data.home_region, billing_country: data.billing_country },
+      action: 'initiated',
+      description: `Registration initiated for ${data.email}`,
+      metadata: { email: data.email, organization_name: data.organization_name },
       request
     });
 
     return createApiResponse({
-      message: 'Organization created successfully. Check your email to verify and sign in.',
-      organization_id: organization.id,
+      message: 'Registration link sent to your email. Please verify to complete registration.'
     });
   } catch (error: any) {
     // Audit log for failed registration

@@ -4,10 +4,15 @@ import { subscriptions, payment_methods } from '../../../lib/db/schema';
 import { eq, and, isNull } from 'drizzle-orm';
 import { withAuth, AuthenticatedRequest } from '../../../middleware/auth';
 import { createApiResponse, createErrorResponse } from '../../../lib/api/response';
+import { handleOptions } from '../../../lib/api/cors';
 import { logAuditEvent } from '../../../lib/audit/logger';
 import { apiRateLimit } from '../../../lib/rate-limit';
-import { getPaymentMethods as getStripePaymentMethods } from '../../../lib/stripe';
+import { getPaymentMethods as getStripePaymentMethods, stripe } from '../../../lib/stripe';
 import { z } from 'zod';
+
+export async function OPTIONS() {
+  return handleOptions();
+}
 
 /**
  * @swagger
@@ -181,19 +186,58 @@ async function addPaymentMethod(request: AuthenticatedRequest) {
       return createErrorResponse('Payment method already exists', 409);
     }
 
-    // TODO: In real implementation, validate with Stripe API
-    // const stripePaymentMethod = await stripe.paymentMethods.retrieve(stripe_payment_method_id);
-    
-    // For now, simulate Stripe payment method data
-    const mockStripeData = {
-      type: 'card',
-      card: {
-        brand: 'visa',
-        last4: '4242',
-        exp_month: 12,
-        exp_year: 2027
+    // Get organization's Stripe customer ID from subscription
+    const subscription = await db
+      .select({ stripe_customer_id: subscriptions.stripe_customer_id })
+      .from(subscriptions)
+      .where(eq(subscriptions.org_id, request.user.org_id))
+      .limit(1);
+
+    if (!subscription[0]?.stripe_customer_id) {
+      return createErrorResponse('No Stripe customer found for organization', 400);
+    }
+
+    // Validate payment method with Stripe
+    let stripePaymentMethod;
+    try {
+      stripePaymentMethod = await stripe.paymentMethods.retrieve(stripe_payment_method_id);
+    } catch (error: any) {
+      console.error('Stripe payment method validation error:', error);
+      
+      if (error.type === 'StripeInvalidRequestError') {
+        return createErrorResponse('Invalid payment method ID', 400);
       }
-    };
+      
+      return createErrorResponse('Failed to validate payment method', 500);
+    }
+
+    // Attach payment method to customer if not already attached
+    if (!stripePaymentMethod.customer) {
+      try {
+        await stripe.paymentMethods.attach(stripe_payment_method_id, {
+          customer: subscription[0].stripe_customer_id,
+        });
+      } catch (error: any) {
+        console.error('Error attaching payment method to customer:', error);
+        
+        // Handle specific Stripe errors
+        if (error.type === 'StripeCardError') {
+          const errorMessages: { [key: string]: string } = {
+            'card_declined': 'Your card was declined. Please try a different payment method.',
+            'insufficient_funds': 'Your card has insufficient funds. Please try a different payment method.',
+            'expired_card': 'Your card has expired. Please try a different payment method.',
+            'incorrect_cvc': 'Your card\'s security code is incorrect. Please try again.',
+            'processing_error': 'An error occurred while processing your card. Please try again.',
+            'incorrect_number': 'Your card number is incorrect. Please try again.'
+          };
+          
+          const userMessage = errorMessages[error.code] || error.message || 'Your payment method was declined. Please try a different payment method.';
+          return createErrorResponse(userMessage, 402);
+        }
+        
+        return createErrorResponse('Failed to attach payment method', 500);
+      }
+    }
 
     const newPaymentMethod = await db.transaction(async (tx) => {
       // If set_as_default, unset other default payment methods
@@ -216,13 +260,15 @@ async function addPaymentMethod(request: AuthenticatedRequest) {
           org_id: request.user.org_id,
           user_id: request.user.user_id,
           stripe_payment_method_id: stripe_payment_method_id,
-          type: mockStripeData.type as any,
-          card_brand: mockStripeData.card?.brand || null,
-          card_last4: mockStripeData.card?.last4 || null,
-          card_exp_month: mockStripeData.card?.exp_month || null,
-          card_exp_year: mockStripeData.card?.exp_year || null,
+          type: stripePaymentMethod.type as any,
+          card_brand: stripePaymentMethod.card?.brand || null,
+          card_last4: stripePaymentMethod.card?.last4 || null,
+          card_exp_month: stripePaymentMethod.card?.exp_month || null,
+          card_exp_year: stripePaymentMethod.card?.exp_year || null,
+          bank_name: stripePaymentMethod.us_bank_account?.bank_name || null,
+          bank_last4: stripePaymentMethod.us_bank_account?.last4 || null,
           is_default: set_as_default,
-          is_verified: true, // Assume verified from Stripe
+          is_verified: true,
           created_at: new Date(),
           updated_at: new Date(),
         })
@@ -242,12 +288,14 @@ async function addPaymentMethod(request: AuthenticatedRequest) {
       resource_type: 'payment_method',
       resource_id: newPaymentMethod.id,
       action: 'create',
-      description: `User added new payment method (${mockStripeData.card?.brand} ****${mockStripeData.card?.last4})`,
+      description: `User added new payment method (${stripePaymentMethod.card?.brand || stripePaymentMethod.type} ****${stripePaymentMethod.card?.last4 || stripePaymentMethod.us_bank_account?.last4})`,
       metadata: { 
         stripe_payment_method_id,
-        payment_method_type: mockStripeData.type,
-        card_brand: mockStripeData.card?.brand,
-        card_last4: mockStripeData.card?.last4,
+        payment_method_type: stripePaymentMethod.type,
+        card_brand: stripePaymentMethod.card?.brand,
+        card_last4: stripePaymentMethod.card?.last4,
+        bank_name: stripePaymentMethod.us_bank_account?.bank_name,
+        bank_last4: stripePaymentMethod.us_bank_account?.last4,
         set_as_default
       },
       request

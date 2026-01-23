@@ -1,5 +1,5 @@
 import { db, setTenantContext } from '../db';
-import { user_sessions, users } from '../db/schema';
+import { user_sessions, users, organizations } from '../db/schema';
 import { eq, and, sql } from 'drizzle-orm';
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
@@ -24,6 +24,7 @@ export async function createSession(sessionData: SessionData): Promise<CreateSes
       org_id: sessionData.org_id,
       session_token: sessionToken,
       refresh_token: hashedRefreshToken,
+      device_id: sessionData.device_id,
       device_type: sessionData.device_type,
       device_name: sessionData.device_name,
       os: sessionData.os,
@@ -52,6 +53,11 @@ export async function createSession(sessionData: SessionData): Promise<CreateSes
       org_id: users.org_id,
     }).from(users).where(eq(users.id, sessionData.user_id));
 
+    // Get organization plan_tier
+    const [org] = await tx.select({
+      plan_tier: organizations.plan_tier,
+    }).from(organizations).where(eq(organizations.id, user.org_id));
+
     // Create JWT token for API requests (24 hours)
     const jwtToken = await signToken({
       userId: user.id,
@@ -66,7 +72,12 @@ export async function createSession(sessionData: SessionData): Promise<CreateSes
       refresh_token: refreshToken,
       jwt_token: jwtToken,
       expires_at: expiresAt,
-      user,
+      user: {
+        ...user,
+        organization: {
+          plan_tier: org.plan_tier
+        }
+      },
     };
   });
 }

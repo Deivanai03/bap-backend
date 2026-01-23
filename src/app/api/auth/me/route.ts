@@ -4,6 +4,7 @@ import { db } from '../../../../lib/db';
 import { users, organizations } from '../../../../lib/db/schema';
 import { eq } from 'drizzle-orm';
 import { createApiResponse, createErrorResponse } from '../../../../lib/api/response';
+import { handleOptions } from '../../../../lib/api/cors';
 
 /**
  * @swagger
@@ -26,6 +27,10 @@ import { createApiResponse, createErrorResponse } from '../../../../lib/api/resp
  *       429:
  *         description: Rate limit exceeded
  */
+export async function OPTIONS() {
+  return handleOptions();
+}
+
 export async function GET(request: NextRequest) {
   try {
     const sessionData = await authenticateRequest(request);
@@ -54,6 +59,7 @@ export async function GET(request: NextRequest) {
         plan_tier: organizations.plan_tier,
         home_region: organizations.home_region,
         currency: organizations.currency,
+        onboarding_completed: organizations.onboarding_completed,
       }
     })
     .from(users)

@@ -6,10 +6,16 @@ import { withAuth, AuthenticatedRequest } from '../../../../middleware/auth';
 import { requirePermission } from '../../../../middleware/rbac';
 import { handleStripeError, handleDatabaseError } from '../../../../lib/errors/handlers';
 import { ApiErrorCode, createApiResponse, createErrorResponse } from '../../../../lib/api/response';
+import { handleOptions } from '../../../../lib/api/cors';
 import { logAuditEvent } from '../../../../lib/audit/logger';
 import { apiRateLimit } from '../../../../lib/rate-limit';
 import { updateSubscription } from '../../../../lib/stripe';
 import { UpgradeSubscriptionSchema } from '../../../../types/billing';
+import { handleOptions } from '../../../../lib/api/cors';
+
+export async function OPTIONS() {
+  return handleOptions();
+}
 
 /**
  * @swagger

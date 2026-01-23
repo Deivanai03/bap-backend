@@ -4,6 +4,11 @@ import { createApiResponse, createErrorResponse } from '../../../lib/api/respons
 import { logAuditEvent } from '../../../lib/audit/logger';
 import { apiRateLimit } from '../../../lib/rate-limit';
 import { eq, desc, sql, and } from 'drizzle-orm';
+import { handleOptions } from '../../../lib/api/cors';
+
+export async function OPTIONS() {
+  return handleOptions();
+}
 
 /**
  * @swagger

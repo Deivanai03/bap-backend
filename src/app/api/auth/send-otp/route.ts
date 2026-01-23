@@ -1,21 +1,18 @@
 import { NextRequest } from 'next/server';
-import { generateLoginToken } from '../../../../lib/auth/jwt-magic-link';
+import { generateMagicLink } from '../../../../lib/auth/magic-link';
 import { sendMagicLinkEmail } from '../../../../lib/email';
-import { createApiResponse, createErrorResponse } from '../../../../lib/api/response';
+import { createApiResponse, createErrorResponse, ApiErrorCode } from '../../../../lib/api/response';
 import { handleOptions } from '../../../../lib/api/cors';
 import { logAuditEvent } from '../../../../lib/audit/logger';
 import { checkMagicLinkRateLimit } from '../../../../lib/rate-limit/magic-link';
-import { db } from '../../../../lib/db';
-import { users } from '../../../../lib/db/schema';
-import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 
 /**
  * @swagger
- * /api/auth/send-magic-link:
+ * /api/auth/send-otp:
  *   post:
- *     summary: Send magic link to existing user
- *     description: Send a magic link authentication email to an existing user. New users must register first.
+ *     summary: Send magic link with OTP
+ *     description: Send a magic link authentication email that contains an associated OTP code (extractable via get-otp endpoint)
  *     tags: [Authentication]
  *     security: []
  *     requestBody:
@@ -33,7 +30,7 @@ import { z } from 'zod';
  *                 example: <your-email@gmail.com>
  *     responses:
  *       200:
- *         description: Magic link sent successfully
+ *         description: Magic link sent successfully (contains extractable OTP)
  *         content:
  *           application/json:
  *             schema:
@@ -41,7 +38,7 @@ import { z } from 'zod';
  *       400:
  *         description: Invalid email or validation error
  *       404:
- *         description: User not found - please register first
+ *         description: User not found
  *       429:
  *         description: Rate limit exceeded
  */
@@ -58,34 +55,24 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { email } = schema.parse(body);
     
-    // Check if user exists - only existing users can request magic links
-    const [existingUser] = await db.select({ id: users.id })
-      .from(users)
-      .where(eq(users.email, email))
-      .limit(1);
-    
-    if (!existingUser) {
-      return createErrorResponse('User not found. Please register first.', 404,);
-    }
-    
     // Email-specific rate limiting (5 per hour per email)
     const rateLimitResult = await checkMagicLinkRateLimit(email);
     if (!rateLimitResult.success) {
-      return createErrorResponse('Too many magic link requests for this email. Please try again in an hour.', 429);
+      return createErrorResponse('Too many magic link requests for this email. Please try again in an hour.', 429, ApiErrorCode.RATE_LIMIT_EXCEEDED);
     }
     
-    const token = await generateLoginToken(email);
-    const magicLink = `${process.env.FRONTEND_URL}/verify-email?token=${token}`;
+    const token = await generateMagicLink(email);
+    const magicLink = `${process.env.NEXTAUTH_URL}/verify-email?token=${token}`;
     
     await sendMagicLinkEmail(email, magicLink);
 
     // Audit log
-    logAuditEvent({
-      event_type: 'auth.magic_link_sent',
+    await logAuditEvent({
+      event_type: 'auth.otp_sent',
       event_category: 'auth',
       actor_type: 'user',
       action: 'sent',
-      description: `Magic link sent to ${email}`,
+      description: `OTP magic link sent to ${email}`,
       metadata: { email, remaining: rateLimitResult.remaining },
       request
     });
@@ -95,16 +82,16 @@ export async function POST(request: NextRequest) {
     });
   } catch (error: any) {
     // Audit log for failed attempts
-    logAuditEvent({
-      event_type: 'auth.magic_link_failed',
+    await logAuditEvent({
+      event_type: 'auth.otp_failed',
       event_category: 'security',
       actor_type: 'user',
       action: 'failed',
-      description: `Magic link generation failed: ${error.message}`,
+      description: `OTP generation failed: ${error.message}`,
       metadata: { error: error.message },
       request
     });
 
-    return createErrorResponse(error.message, 400);
+    return createErrorResponse(error.message, 400, ApiErrorCode.INVALID_INPUT);
   }
 }

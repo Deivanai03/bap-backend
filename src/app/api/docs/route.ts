@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+export async function OPTIONS() {
+  return handleOptions();
+}
+
 export async function GET() {
   const html = `
     <!DOCTYPE html>

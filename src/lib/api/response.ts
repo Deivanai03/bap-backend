@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { v4 as uuidv4 } from 'uuid';
+import { corsHeaders } from './cors';
 
 export function createApiResponse<T>(
   data?: T,
@@ -14,6 +15,8 @@ export function createApiResponse<T>(
       timestamp: new Date().toISOString(),
     },
     errors,
+  }, {
+    headers: corsHeaders()
   });
 }
 
@@ -23,8 +26,15 @@ export enum ApiErrorCode {
   EXPIRED_TOKEN = 'EXPIRED_TOKEN',
   INSUFFICIENT_PERMISSIONS = 'INSUFFICIENT_PERMISSIONS',
   
+  // Magic link & OTP errors
+  INVALID_TOKEN = 'INVALID_TOKEN',
+  INVALID_OTP = 'INVALID_OTP',
+  USER_NOT_FOUND = 'USER_NOT_FOUND',
+  USER_INACTIVE = 'USER_INACTIVE',
+  
   // Validation errors
   INVALID_INPUT = 'INVALID_INPUT',
+  INVALID_EMAIL = 'INVALID_EMAIL',
   MISSING_REQUIRED_FIELD = 'MISSING_REQUIRED_FIELD',
   
   // Business logic errors
@@ -62,5 +72,8 @@ export function createErrorResponse(
       timestamp: new Date().toISOString(),
     },
     errors: [error],
-  }, { status });
+  }, { 
+    status,
+    headers: corsHeaders()
+  });
 }

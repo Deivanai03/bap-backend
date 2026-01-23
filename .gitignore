@@ -8,8 +8,9 @@ node_modules/
 .env
 .env.local
 
-# Drizzle cache
+# Drizzle cache and generated files
 .drizzle/
+drizzle/
 
 # Logs
 *.log

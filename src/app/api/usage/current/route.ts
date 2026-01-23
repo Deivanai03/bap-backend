@@ -4,7 +4,12 @@ import { usage_tracking, subscriptions, plans } from '../../../../lib/db/schema'
 import { eq, and, gte, lte } from 'drizzle-orm';
 import { withAuth, AuthenticatedRequest } from '../../../../middleware/auth';
 import { createApiResponse, createErrorResponse } from '../../../../lib/api/response';
+import { handleOptions } from '../../../../lib/api/cors';
 import { apiRateLimit } from '../../../../lib/rate-limit';
+
+export async function OPTIONS() {
+  return handleOptions();
+}
 
 /**
  * @swagger

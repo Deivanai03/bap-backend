@@ -4,6 +4,7 @@ export interface SessionData {
   org_id: string;
   email: string;
   role: string;
+  device_id?: string;
   device_type?: string;
   device_name?: string;
   os?: string;
@@ -24,6 +25,9 @@ export interface CreateSessionResult {
     full_name: string | null;
     role: string;
     org_id: string;
+    organization: {
+      plan_tier: string;
+    };
   };
 }
 
@@ -47,6 +51,7 @@ export interface LoginContext {
 }
 
 export interface DeviceInfo {
+  device_id?: string;
   device_type: string;
   device_name: string;
   os: string;

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { refreshSession } from '../../../../lib/auth/session';
 import { createApiResponse, createErrorResponse } from '../../../../lib/api/response';
+import { handleOptions } from '../../../../lib/api/cors';
 import { logAuditEvent } from '../../../../lib/audit/logger';
 import { apiRateLimit } from '../../../../lib/rate-limit';
 
@@ -24,6 +25,10 @@ import { apiRateLimit } from '../../../../lib/rate-limit';
  *       429:
  *         description: Rate limit exceeded
  */
+export async function OPTIONS() {
+  return handleOptions();
+}
+
 export async function POST(request: NextRequest) {
   try {
     // Rate limiting
@@ -65,6 +70,15 @@ export async function POST(request: NextRequest) {
     // Set new refresh token cookie
     response.cookies.set('refresh_token', sessionResult.refresh_token, {
       httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 30 * 24 * 60 * 60, // 30 days
+      path: '/'
+    });
+
+    // Set user plan tier cookie for middleware
+    response.cookies.set('user_plan_tier', sessionResult.user.organization.plan_tier, {
+      httpOnly: false, // Allow client-side access
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'strict',
       maxAge: 30 * 24 * 60 * 60, // 30 days

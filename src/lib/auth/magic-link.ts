@@ -10,6 +10,10 @@ const MAGIC_LINK_EXPIRY_MINUTES = 15;
 const TOKEN_LENGTH = 32;
 const SALT_ROUNDS = 12;
 
+function generateOTP(): string {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+}
+
 export async function generateMagicLink(email: string): Promise<string> {
   if (!email?.trim()) {
     throw new MagicLinkError('Email is required', 'INVALID_EMAIL');
@@ -17,6 +21,7 @@ export async function generateMagicLink(email: string): Promise<string> {
 
   const token = crypto.randomBytes(TOKEN_LENGTH).toString('hex');
   const hashedToken = await bcrypt.hash(token, SALT_ROUNDS);
+  const otp = generateOTP();
   const expires = new Date(Date.now() + MAGIC_LINK_EXPIRY_MINUTES * 60 * 1000);
   
   const user = await db.select({
@@ -38,11 +43,123 @@ export async function generateMagicLink(email: string): Promise<string> {
   await db.update(users)
     .set({ 
       magic_link_token: hashedToken,
-      magic_link_expires: expires
+      magic_link_expires: expires,
+      otp_code: otp,
+      otp_expires: expires
     })
     .where(eq(users.id, user[0].id));
   
   return token; // Return plain token for email
+}
+
+export async function getOTPFromToken(token: string): Promise<string> {
+  if (!token?.trim()) {
+    throw new MagicLinkError('Token is required', 'INVALID_TOKEN');
+  }
+
+  // Get all users with non-null magic_link_token and valid expiry
+  const users_with_tokens = await db.select({
+    id: users.id,
+    org_id: users.org_id,
+    magic_link_token: users.magic_link_token,
+    magic_link_expires: users.magic_link_expires,
+    otp_code: users.otp_code,
+    otp_expires: users.otp_expires,
+  })
+  .from(users)
+  .where(and(
+    eq(users.status, 'active'),
+    sql`${users.magic_link_token} IS NOT NULL`,
+    sql`${users.magic_link_expires} > NOW()`
+  ));
+  
+  // Find user by comparing hashed tokens
+  let userData = null;
+  for (const user of users_with_tokens) {
+    if (user.magic_link_token && await bcrypt.compare(token.trim(), user.magic_link_token)) {
+      userData = user;
+      break;
+    }
+  }
+  
+  if (!userData || !userData.otp_code) {
+    throw new MagicLinkError('Invalid or expired token', 'INVALID_TOKEN');
+  }
+
+  // Check OTP expiry
+  if (userData.otp_expires && userData.otp_expires < new Date()) {
+    throw new MagicLinkError('OTP has expired', 'INVALID_TOKEN');
+  }
+  
+  return userData.otp_code;
+}
+
+export async function verifyOTPAndCreateSession(
+  email: string,
+  otp: string,
+  context: LoginContext = {}
+): Promise<CreateSessionResult> {
+  if (!email?.trim() || !otp?.trim()) {
+    throw new MagicLinkError('Email and OTP are required', 'INVALID_INPUT');
+  }
+
+  const userData = await db.select({
+    id: users.id,
+    email: users.email,
+    full_name: users.full_name,
+    role: users.role,
+    org_id: users.org_id,
+    email_verified: users.email_verified,
+    otp_code: users.otp_code,
+    otp_expires: users.otp_expires,
+  })
+  .from(users)
+  .where(and(
+    eq(users.email, email.toLowerCase().trim()),
+    eq(users.status, 'active'),
+    sql`${users.otp_code} IS NOT NULL`
+  ))
+  .limit(1);
+  
+  if (userData.length === 0) {
+    throw new MagicLinkError('Invalid email or OTP', 'INVALID_OTP');
+  }
+
+  const user = userData[0];
+  
+  // Check OTP expiry
+  if (user.otp_expires && user.otp_expires < new Date()) {
+    throw new MagicLinkError('OTP has expired', 'INVALID_OTP');
+  }
+
+  // Verify OTP
+  if (user.otp_code !== otp.trim()) {
+    throw new MagicLinkError('Invalid OTP', 'INVALID_OTP');
+  }
+  
+  await setTenantContext(user.org_id);
+  
+  // Clear OTP and magic link token
+  await db.update(users)
+    .set({
+      magic_link_token: null,
+      magic_link_expires: null,
+      otp_code: null,
+      otp_expires: null,
+      email_verified: true
+    })
+    .where(eq(users.id, user.id));
+  
+  // Create session
+  const sessionResult = await createSession({
+    user_id: user.id,
+    org_id: user.org_id,
+    email: user.email,
+    role: user.role,
+    ...context
+  });
+
+  return sessionResult;
 }
 
 export async function verifyMagicLinkAndCreateSession(
@@ -86,16 +203,18 @@ export async function verifyMagicLinkAndCreateSession(
   
   await setTenantContext(userData.org_id);
   
-  // Clear magic link token first
+  // Clear magic link token and OTP
   await db.update(users)
     .set({
       magic_link_token: null,
       magic_link_expires: null,
+      otp_code: null,
+      otp_expires: null,
       email_verified: true
     })
     .where(eq(users.id, userData.id));
   
-  // Create session (already has its own transaction)
+  // Create session
   const sessionResult = await createSession({
     user_id: userData.id,
     org_id: userData.org_id,

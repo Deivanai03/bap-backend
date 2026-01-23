@@ -6,6 +6,11 @@ import { withAuth, AuthenticatedRequest } from '../../../../../middleware/auth';
 import { createErrorResponse } from '../../../../../lib/api/response';
 import { logAuditEvent } from '../../../../../lib/audit/logger';
 import { apiRateLimit } from '../../../../../lib/rate-limit';
+import { handleOptions } from '../../../../../lib/api/cors';
+
+export async function OPTIONS() {
+  return handleOptions();
+}
 
 /**
  * @swagger

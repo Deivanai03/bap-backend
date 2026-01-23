@@ -63,18 +63,28 @@ npm run dev
    {
      "email": "your-email@example.com",
      "full_name": "Your Name",
-     "organization_name": "Your Company"
+     "organization_name": "Your Company",
+     "home_region": "IN",
+     "billing_country": "IN",
+     "currency": "INR"
    }
    ```
-3. Continue with magic link steps below
+3. Check email for magic link and click it
+4. Complete onboarding process
+5. Use returned JWT token for API access
 
 **For Existing Users:**
 1. Navigate to http://localhost:3001/api/docs
 2. Use `POST /api/auth/send-magic-link` with your email
-3. Check email for magic link and extract token
-4. Use `POST /api/auth/verify-magic-link` with token
-5. Copy JWT from response
-6. Click "Authorize" in Swagger UI and enter: `Bearer YOUR_JWT_TOKEN`
+3. Check email for magic link and click it
+4. Use `POST /api/auth/verify-magic-link` with the token from the magic link url.
+5. Use returned JWT token for API access
+
+**Alternative OTP Flow:**
+1. Get magic link from email
+2. Use `GET /api/auth/get-otp?token=TOKEN` to extract OTP
+3. Use `POST /api/auth/verify-otp` with email, OTP, and token
+4. Use returned JWT token for API access
 
 ### Database Access
 - **Drizzle Studio**: `npm run db:studio` (opens at http://localhost:4983)
@@ -109,14 +119,16 @@ npm run dev
 The authentication system is fully implemented with enterprise-grade security:
 
 ### Features Implemented
-- Magic Link Authentication - Email-based, passwordless login with rate limiting (5 requests per hour per email)
-- Multi-Tenant Isolation - RLS ensures complete data separation between organizations
-- Session Management - JWT tokens with HTTP-only cookies and device tracking
-- Device Tracking - Browser, OS, IP address, and location tracking
-- Rate Limiting - 300 requests per minute per IP address
-- Audit Logging - All authentication events logged with GDPR/HIPAA compliance flags
-- Input Validation - Comprehensive Zod schemas for all inputs
-- Email Immutability - Database-level constraint prevents email changes
+- **Magic Link Authentication** - Email-based, passwordless login with secure token verification
+- **Email Verification Required** - Users created only after email verification (no unverified accounts in database)
+- **Multi-Tenant Isolation** - RLS ensures complete data separation between organizations
+- **Global Email Uniqueness** - Database-level constraint prevents duplicate emails across organizations
+- **Session Management** - JWT tokens with HTTP-only cookies and comprehensive device tracking
+- **Device Tracking** - Browser, OS, IP address, device ID, and location tracking for security
+- **Rate Limiting** - 300 requests per minute per IP address
+- **Audit Logging** - All authentication events logged with GDPR/HIPAA compliance flags
+- **Input Validation** - Comprehensive Zod schemas for all inputs
+- **CORS Support** - Standardized CORS headers across all API endpoints
 
 ### Security Features
 - Row Level Security (RLS) enabled on all tables
@@ -124,6 +136,12 @@ The authentication system is fully implemented with enterprise-grade security:
 - JWT token validation with session verification
 - Comprehensive error handling with structured error codes
 - Request/response logging for security monitoring
+- Device fingerprinting for fraud detection
+
+### Authentication Flow
+- **Registration**: User submits registration data → Magic link sent to email → Email verification → User/org creation + JWT session token returned
+- **Login**: Existing users request magic link → Magic link sent to email → Email verification → JWT session token returned  
+- **Verification**: Single endpoint handles both registration and login magic link tokens
 
 
 ## Billing Module
@@ -147,11 +165,17 @@ The billing system integrates with Stripe for payment processing:
 ## API Endpoints
 
 ### Authentication
-- `POST /api/auth/register` - Register new organization and user
-- `POST /api/auth/send-magic-link` - Send magic link to email address
-- `POST /api/auth/verify-magic-link` - Verify magic link and create session
+- `POST /api/auth/register` - Register new organization and user (sends magic link to email)
+- `POST /api/auth/send-magic-link` - Send magic link to existing users only
+- `POST /api/auth/verify-magic-link` - Verify magic link and create session (handles both registration and login)
+- `POST /api/auth/get-otp` - Extract OTP from magic link token (supports both JWT and database tokens)
+- `POST /api/auth/verify-otp` - Verify OTP and create session (supports both registration and login flows)
 - `POST /api/auth/refresh` - Refresh JWT token using refresh token
-- `GET /api/auth/me` - Get current user profile and permissions
+- `POST /api/auth/logout` - Logout and revoke session
+- `GET /api/auth/me` - Get current user profile and permissions (includes onboarding status)
+
+### Onboarding
+- `POST /api/auth/onboarding/complete` - Complete onboarding process with organization and user data
 
 ### Plans & Subscriptions
 - `GET /api/plans` - List available subscription plans
@@ -164,7 +188,7 @@ The billing system integrates with Stripe for payment processing:
 - `GET /api/invoices/:id/download` - Download invoice PDF
 - `GET /api/payment-methods` - List payment methods
 - `POST /api/payment-methods` - Add new payment method
-- `DELETE /api/payment-methods/:id` - Remove payment method
+- `DELETE /api/payment-methods/:id` - Remove payment method (accepts both database UUID and Stripe payment method ID)
 
 ### Usage & Limits
 - `GET /api/usage/current` - Get current period usage metrics

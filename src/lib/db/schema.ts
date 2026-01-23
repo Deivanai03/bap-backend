@@ -20,14 +20,14 @@ export const organizations = pgTable('organizations', {
     compliance_profile: varchar('compliance_profile', { length: 20 }).default('DEFAULT').notNull(),
 
     // BILLING METADATA
-    billing_email: varchar('billing_email', { length: 255 }).notNull(),
+    billing_email: varchar('billing_email', { length: 255 }).notNull().unique(),
     tax_id: varchar('tax_id', { length: 100 }),
     billing_address: jsonb('billing_address'),
 
     // PLAN & LIMITS
     plan_tier: varchar('plan_tier', { length: 20 }).default('FREE').notNull(),
     is_trial: boolean('is_trial').default(false).notNull(),
-    trial_ends_at: timestamptz('trial_ends_at').default(sql`NOW()`).notNull(),
+    trial_ends_at: timestamptz('trial_ends_at'),
 
     // FEATURE FLAGS
     feature_overrides: jsonb('feature_overrides').default('{}'),
@@ -40,7 +40,6 @@ export const organizations = pgTable('organizations', {
     industry: varchar('industry', { length: 100 }),
     company_size: varchar('company_size', { length: 20 }),
     onboarding_completed: boolean('onboarding_completed').default(false).notNull(),
-    onboarding_step: varchar('onboarding_step', { length: 50 }),
 
     // SETTINGS
     settings: jsonb('settings').default('{}'),
@@ -93,6 +92,10 @@ export const users = pgTable('users', {
     // MAGIC LINK AUTH
     magic_link_token: varchar('magic_link_token', { length: 255 }),
     magic_link_expires: timestamptz('magic_link_expires'),
+    
+    // OTP AUTH (associated with magic link)
+    otp_code: varchar('otp_code', { length: 6 }),
+    otp_expires: timestamptz('otp_expires'),
 
     // ACTIVITY
     last_login_at: timestamptz('last_login_at'),
@@ -104,7 +107,7 @@ export const users = pgTable('users', {
     updated_at: timestamptz('updated_at').defaultNow().notNull(),
     deleted_at: timestamptz('deleted_at'),
 }, (table) => ({
-    uniqueOrgEmail: unique().on(table.org_id, table.email),
+    uniqueEmail: unique().on(table.email),
     // Check constraints
     chkUserRole: sql`CONSTRAINT chk_user_role CHECK (role IN ('OWNER', 'ADMIN', 'MEMBER', 'GUEST'))`,
     chkUserStatus: sql`CONSTRAINT chk_user_status CHECK (status IN ('active', 'invited', 'suspended', 'deleted'))`,
@@ -124,6 +127,7 @@ export const user_sessions = pgTable('user_sessions', {
     refresh_token: varchar('refresh_token', { length: 255 }),
 
     // DEVICE CONTEXT
+    device_id: varchar('device_id', { length: 255 }), // Persistent device identifier
     device_type: varchar('device_type', { length: 20 }),
     device_name: varchar('device_name', { length: 255 }),
     os: varchar('os', { length: 50 }),
@@ -203,6 +207,10 @@ export const plans = pgTable('plans', {
     // STRIPE INTEGRATION
     stripe_product_id: varchar('stripe_product_id', { length: 255 }),
     stripe_prices: jsonb('stripe_prices').notNull(),
+    
+    // PRICING AMOUNTS
+    base_price: decimal('base_price', { precision: 10, scale: 2 }),
+    currency_prices: jsonb('currency_prices').default('{}'),
     
     // FEATURES & LIMITS
     features: jsonb('features').notNull(),

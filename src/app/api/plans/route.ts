@@ -4,8 +4,13 @@ import { plans } from '../../../lib/db/schema';
 import { eq, and } from 'drizzle-orm';
 import { withAuth, AuthenticatedRequest } from '../../../middleware/auth';
 import { createApiResponse, createErrorResponse } from '../../../lib/api/response';
+import { handleOptions } from '../../../lib/api/cors';
 import { logAuditEvent } from '../../../lib/audit/logger';
 import { apiRateLimit } from '../../../lib/rate-limit';
+
+export async function OPTIONS() {
+  return handleOptions();
+}
 
 /**
  * @swagger

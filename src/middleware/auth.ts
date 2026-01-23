@@ -3,6 +3,7 @@ import { validateSession } from '../lib/auth/session';
 import { verifyToken } from '../lib/auth/jwt';
 import { setTenantContext } from '../lib/db';
 import { SessionData, AuthError, DeviceInfo } from '../types';
+import { corsHeaders } from '../lib/api/cors';
 
 export interface AuthenticatedRequest extends NextRequest {
   user: SessionData;
@@ -64,7 +65,7 @@ export function withAuth(handler: (req: AuthenticatedRequest) => Promise<NextRes
               message: error.message,
             },
           },
-          { status: error.status }
+          { status: error.status, headers: corsHeaders() }
         );
       }
 
@@ -77,7 +78,7 @@ export function withAuth(handler: (req: AuthenticatedRequest) => Promise<NextRes
             message: 'Internal server error',
           },
         },
-        { status: 500 }
+        { status: 500, headers: corsHeaders() }
       );
     }
   };
@@ -95,7 +96,7 @@ export function requireRole(allowedRoles: string[]) {
               message: 'Insufficient permissions for this action',
             },
           },
-          { status: 403 }
+          { status: 403, headers: corsHeaders() }
         );
       }
 
@@ -104,41 +105,58 @@ export function requireRole(allowedRoles: string[]) {
   };
 }
 
-export function extractDeviceInfo(request: NextRequest): DeviceInfo {
+export function extractDeviceInfo(request: NextRequest, deviceData?: any): DeviceInfo {
   const userAgent = request.headers.get('user-agent') || '';
   const ip = request.headers.get('x-forwarded-for') || 
              request.headers.get('x-real-ip') || 
              request.ip;
 
-  // Simple device detection
-  const isMobile = /Mobile|Android|iPhone|iPad/.test(userAgent);
-  const isTablet = /iPad|Tablet/.test(userAgent);
-  
-  let deviceType = 'desktop';
-  if (isTablet) deviceType = 'tablet';
-  else if (isMobile) deviceType = 'mobile';
+  // If frontend provides device data, use it
+  if (deviceData) {
+    return {
+      device_id: deviceData.device_id,
+      device_type: detectDeviceType(deviceData.user_agent || userAgent),
+      device_name: `${detectBrowser(deviceData.user_agent || userAgent)} on ${detectOS(deviceData.user_agent || userAgent)}`,
+      os: detectOS(deviceData.user_agent || userAgent),
+      browser: detectBrowser(deviceData.user_agent || userAgent),
+      ip_address: ip,
+      user_agent: deviceData.user_agent || userAgent,
+    };
+  }
 
-  // Extract browser info
-  let browser = 'unknown';
-  if (userAgent.includes('Chrome')) browser = 'chrome';
-  else if (userAgent.includes('Firefox')) browser = 'firefox';
-  else if (userAgent.includes('Safari')) browser = 'safari';
-  else if (userAgent.includes('Edge')) browser = 'edge';
-
-  // Extract OS info
-  let os = 'unknown';
-  if (userAgent.includes('Windows')) os = 'windows';
-  else if (userAgent.includes('Mac')) os = 'macos';
-  else if (userAgent.includes('Linux')) os = 'linux';
-  else if (userAgent.includes('Android')) os = 'android';
-  else if (userAgent.includes('iOS')) os = 'ios';
-
+  // Fallback to basic detection from headers
   return {
-    device_type: deviceType,
-    device_name: `${browser} on ${os}`,
-    os,
-    browser,
+    device_type: detectDeviceType(userAgent),
+    device_name: `${detectBrowser(userAgent)} on ${detectOS(userAgent)}`,
+    os: detectOS(userAgent),
+    browser: detectBrowser(userAgent),
     ip_address: ip,
     user_agent: userAgent,
   };
+}
+
+function detectDeviceType(userAgent: string): string {
+  const isMobile = /Mobile|Android|iPhone|iPad/.test(userAgent);
+  const isTablet = /iPad|Tablet/.test(userAgent);
+  
+  if (isTablet) return 'tablet';
+  if (isMobile) return 'mobile';
+  return 'desktop';
+}
+
+function detectBrowser(userAgent: string): string {
+  if (userAgent.includes('Chrome')) return 'chrome';
+  if (userAgent.includes('Firefox')) return 'firefox';
+  if (userAgent.includes('Safari')) return 'safari';
+  if (userAgent.includes('Edge')) return 'edge';
+  return 'unknown';
+}
+
+function detectOS(userAgent: string): string {
+  if (userAgent.includes('Windows')) return 'windows';
+  if (userAgent.includes('Mac')) return 'macos';
+  if (userAgent.includes('Linux')) return 'linux';
+  if (userAgent.includes('Android')) return 'android';
+  if (userAgent.includes('iOS')) return 'ios';
+  return 'unknown';
 }

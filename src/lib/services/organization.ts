@@ -24,8 +24,6 @@ export async function createOrganization(data: {
       billing_country: data.billing_country,
       currency: data.currency,
       plan_tier: 'FREE',
-      is_trial: true,
-      trial_ends_at: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000), // 14 days trial
       status: 'active',
     }).returning();
 
