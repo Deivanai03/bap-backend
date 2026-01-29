@@ -1,10 +1,11 @@
 import { NextRequest } from 'next/server';
-import { authenticateRequest } from '../../../../middleware/auth';
+import { verifyAuthAndGetUser } from '../../../../middleware/auth';
 import { db } from '../../../../lib/db';
 import { users, organizations } from '../../../../lib/db/schema';
 import { eq } from 'drizzle-orm';
-import { createApiResponse, createErrorResponse } from '../../../../lib/api/response';
+import { createApiResponse, createErrorResponse, ApiErrorCode } from '../../../../lib/api/response';
 import { handleOptions } from '../../../../lib/api/cors';
+import { apiRateLimit } from '../../../../lib/rate-limit';
 
 /**
  * @swagger
@@ -32,9 +33,19 @@ export async function OPTIONS() {
 }
 
 export async function GET(request: NextRequest) {
+  const rateLimitResult = await apiRateLimit(request);
+  if (!rateLimitResult.success) {
+    return createErrorResponse('Rate limit exceeded', 429);
+  }
+
+  const authResult = await verifyAuthAndGetUser(request);
+  if (!authResult.success) {
+    return createErrorResponse(authResult.error!, 401, ApiErrorCode.INVALID_SESSION);
+  }
+
+  const { user } = authResult;
+
   try {
-    const sessionData = await authenticateRequest(request);
-    
     const [userData] = await db.select({
       id: users.id,
       email: users.email,
@@ -64,15 +75,16 @@ export async function GET(request: NextRequest) {
     })
     .from(users)
     .innerJoin(organizations, eq(users.org_id, organizations.id))
-    .where(eq(users.id, sessionData.user_id))
+    .where(eq(users.id, user.user_id))
     .limit(1);
 
     if (!userData) {
-      return createErrorResponse('User not found', 404);
+      return createErrorResponse('User not found', 404, ApiErrorCode.USER_NOT_FOUND);
     }
 
     return createApiResponse(userData);
   } catch (error: any) {
-    return createErrorResponse(error.message, 401);
+    console.error('Error fetching user data:', error);
+    return createErrorResponse('Failed to fetch user data', 500, ApiErrorCode.DATABASE_ERROR);
   }
 }

@@ -215,6 +215,38 @@ const options = {
       { 
         name: 'Webhooks', 
         description: 'External webhook endpoints' 
+      },
+      {
+        name: 'Chats',
+        description: 'Chat management and messaging'
+      },
+      {
+        name: 'Messages',
+        description: 'Message operations and search'
+      },
+      {
+        name: 'Labels',
+        description: 'Chat labeling and organization'
+      },
+      {
+        name: 'Files',
+        description: 'File upload and management'
+      },
+      {
+        name: 'Users',
+        description: 'User management and profiles'
+      },
+      {
+        name: 'Input Agent',
+        description: 'AI input processing and voice transcription'
+      },
+      {
+        name: 'Calls',
+        description: 'Voice and video call management'
+      },
+      {
+        name: 'WebSocket',
+        description: 'WebSocket testing and real-time features'
       }
     ]
   },

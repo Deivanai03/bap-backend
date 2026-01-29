@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, uuid, varchar, boolean, timestamp, jsonb, text, integer, inet, unique, char, decimal, date } from "drizzle-orm/pg-core"; 
+import { pgTable, uuid, varchar, boolean, timestamp, jsonb, text, integer, inet, unique, char, decimal, date, bigint } from "drizzle-orm/pg-core"; 
 
 const timestamptz = (name: string) => timestamp(name, { withTimezone: true });
 
@@ -84,6 +84,9 @@ export const users = pgTable('users', {
 
     // STATUS
     status: varchar('status', { length: 20 }).default('active').notNull(),
+    online_status: varchar('online_status', { length: 20 }).default('offline').notNull(),
+    last_seen: timestamptz('last_seen'),
+    onboarding_completed: boolean('onboarding_completed').default(false).notNull(),
     invited_by: uuid('invited_by').references(() => users.id),
     invitation_token: varchar('invitation_token', { length: 255 }),
     invitation_expires_at: timestamptz('invitation_expires_at'),
@@ -111,6 +114,7 @@ export const users = pgTable('users', {
     // Check constraints
     chkUserRole: sql`CONSTRAINT chk_user_role CHECK (role IN ('OWNER', 'ADMIN', 'MEMBER', 'GUEST'))`,
     chkUserStatus: sql`CONSTRAINT chk_user_status CHECK (status IN ('active', 'invited', 'suspended', 'deleted'))`,
+    chkOnlineStatus: sql`CONSTRAINT chk_online_status CHECK (online_status IN ('online', 'offline', 'away', 'busy'))`,
     chkTheme: sql`CONSTRAINT chk_theme CHECK (theme IN ('system', 'dark', 'light'))`,
     chkFontSize: sql`CONSTRAINT chk_font_size CHECK (font_size IN ('small', 'default', 'large'))`,
 }));
@@ -409,4 +413,184 @@ export const usage_tracking = pgTable('usage_tracking', {
     updated_at: timestamptz('updated_at').defaultNow().notNull(),
 }, (table) => ({
     chkMetricValue: sql`CONSTRAINT chk_metric_value CHECK (metric_value >= 0)`,
+}));
+
+// Chats Table
+export const chats = pgTable('chats', {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    
+    // ORGANIZATION
+    org_id: uuid('org_id').references(() => organizations.id, { onDelete: 'cascade' }).notNull(),
+    
+    // CHAT DETAILS
+    title: varchar('title', { length: 255 }),
+    type: varchar('type', { length: 50 }).default('direct').notNull(),
+    created_by: uuid('created_by').references(() => users.id).notNull(),
+    
+    // TIMESTAMPS
+    last_message_at: timestamptz('last_message_at'),
+    created_at: timestamptz('created_at').defaultNow().notNull(),
+    updated_at: timestamptz('updated_at').defaultNow().notNull(),
+}, (table) => ({
+    chkChatType: sql`CONSTRAINT chk_chat_type CHECK (type IN ('direct', 'group'))`,
+}));
+
+// Chat Participants Table
+export const chat_participants = pgTable('chat_participants', {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    
+    // REFERENCES
+    chat_id: uuid('chat_id').references(() => chats.id, { onDelete: 'cascade' }).notNull(),
+    user_id: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    
+    // PARTICIPANT SETTINGS
+    is_pinned: boolean('is_pinned').default(false).notNull(),
+    is_muted: boolean('is_muted').default(false).notNull(),
+    unread_count: integer('unread_count').default(0).notNull(),
+    
+    // TIMESTAMPS
+    joined_at: timestamptz('joined_at').defaultNow().notNull(),
+}, (table) => ({
+    uniqueChatUser: unique().on(table.chat_id, table.user_id),
+}));
+
+// Messages Table
+export const messages = pgTable('messages', {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    
+    // REFERENCES
+    chat_id: uuid('chat_id').references(() => chats.id, { onDelete: 'cascade' }).notNull(),
+    sender_id: uuid('sender_id').references(() => users.id).notNull(),
+    reply_to: uuid('reply_to').references(() => messages.id),
+    
+    // MESSAGE CONTENT
+    content: text('content'),
+    message_type: varchar('message_type', { length: 50 }).default('text').notNull(),
+    metadata: jsonb('metadata'),
+    
+    // TIMESTAMPS
+    created_at: timestamptz('created_at').defaultNow().notNull(),
+    updated_at: timestamptz('updated_at').defaultNow().notNull(),
+}, (table) => ({
+    chkMessageType: sql`CONSTRAINT chk_message_type CHECK (message_type IN ('text', 'image', 'video', 'audio', 'document', 'system'))`,
+}));
+
+// Labels Table
+export const labels = pgTable('labels', {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    
+    // ORGANIZATION & USER
+    org_id: uuid('org_id').references(() => organizations.id, { onDelete: 'cascade' }).notNull(),
+    user_id: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    
+    // LABEL DETAILS
+    name: varchar('name', { length: 100 }).notNull(),
+    color: varchar('color', { length: 7 }).notNull(),
+    
+    // TIMESTAMPS
+    created_at: timestamptz('created_at').defaultNow().notNull(),
+    updated_at: timestamptz('updated_at').defaultNow().notNull(),
+}, (table) => ({
+    uniqueUserLabel: unique().on(table.user_id, table.name),
+}));
+
+// Chat Labels Table (many-to-many)
+export const chat_labels = pgTable('chat_labels', {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    
+    // REFERENCES
+    chat_id: uuid('chat_id').references(() => chats.id, { onDelete: 'cascade' }).notNull(),
+    label_id: uuid('label_id').references(() => labels.id, { onDelete: 'cascade' }).notNull(),
+}, (table) => ({
+    uniqueChatLabel: unique().on(table.chat_id, table.label_id),
+}));
+
+// File Uploads Table
+export const file_uploads = pgTable('file_uploads', {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    
+    // ORGANIZATION & USER
+    org_id: uuid('org_id').references(() => organizations.id, { onDelete: 'cascade' }).notNull(),
+    user_id: uuid('user_id').references(() => users.id).notNull(),
+    
+    // FILE DETAILS
+    filename: varchar('filename', { length: 255 }).notNull(),
+    original_name: varchar('original_name', { length: 255 }).notNull(),
+    mime_type: varchar('mime_type', { length: 100 }).notNull(),
+    size_bytes: bigint('size_bytes', { mode: 'number' }).notNull(),
+    file_path: text('file_path').notNull(),
+    
+    // STATUS
+    upload_status: varchar('upload_status', { length: 50 }).default('completed').notNull(),
+    
+    // TIMESTAMPS
+    created_at: timestamptz('created_at').defaultNow().notNull(),
+}, (table) => ({
+    chkUploadStatus: sql`CONSTRAINT chk_upload_status CHECK (upload_status IN ('pending', 'completed', 'failed'))`,
+}));
+
+// Voice Sessions Table
+export const voice_sessions = pgTable('voice_sessions', {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    
+    // ORGANIZATION & USER
+    org_id: uuid('org_id').references(() => organizations.id, { onDelete: 'cascade' }).notNull(),
+    user_id: uuid('user_id').references(() => users.id).notNull(),
+    
+    // SESSION DETAILS
+    session_status: varchar('session_status', { length: 50 }).default('active').notNull(),
+    transcript: text('transcript'),
+    audio_duration: integer('audio_duration'),
+    
+    // TIMESTAMPS
+    started_at: timestamptz('started_at').defaultNow().notNull(),
+    ended_at: timestamptz('ended_at'),
+}, (table) => ({
+    chkSessionStatus: sql`CONSTRAINT chk_session_status CHECK (session_status IN ('active', 'ended', 'failed'))`,
+}));
+
+// Input Envelopes Table
+export const input_envelopes = pgTable('input_envelopes', {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    
+    // ORGANIZATION & USER
+    org_id: uuid('org_id').references(() => organizations.id, { onDelete: 'cascade' }).notNull(),
+    user_id: uuid('user_id').references(() => users.id).notNull(),
+    
+    // INPUT DETAILS
+    input_type: varchar('input_type', { length: 50 }).notNull(),
+    content: jsonb('content').notNull(),
+    status: varchar('status', { length: 50 }).default('pending').notNull(),
+    
+    // TIMESTAMPS
+    processed_at: timestamptz('processed_at'),
+    created_at: timestamptz('created_at').defaultNow().notNull(),
+}, (table) => ({
+    chkInputType: sql`CONSTRAINT chk_input_type CHECK (input_type IN ('text', 'voice', 'image', 'document'))`,
+    chkStatus: sql`CONSTRAINT chk_status CHECK (status IN ('pending', 'processing', 'completed', 'failed'))`,
+}));
+
+// Calls Table
+export const calls = pgTable('calls', {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    
+    // ORGANIZATION
+    org_id: uuid('org_id').references(() => organizations.id, { onDelete: 'cascade' }).notNull(),
+    
+    // PARTICIPANTS
+    caller_id: uuid('caller_id').references(() => users.id).notNull(),
+    callee_id: uuid('callee_id').references(() => users.id).notNull(),
+    
+    // CALL DETAILS
+    call_type: varchar('call_type', { length: 50 }).default('video').notNull(),
+    status: varchar('status', { length: 50 }).default('initiated').notNull(),
+    duration: integer('duration'),
+    metadata: jsonb('metadata'),
+    
+    // TIMESTAMPS
+    started_at: timestamptz('started_at').defaultNow().notNull(),
+    ended_at: timestamptz('ended_at'),
+}, (table) => ({
+    chkCallType: sql`CONSTRAINT chk_call_type CHECK (call_type IN ('video', 'voice'))`,
+    chkCallStatus: sql`CONSTRAINT chk_call_status CHECK (status IN ('initiated', 'ringing', 'active', 'ended', 'missed', 'declined'))`,
 }));

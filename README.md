@@ -45,19 +45,19 @@ npm run seed
 # Start development server
 npm run dev
 
-# Server will run on http://localhost:3001
+# Server will run on http://localhost:3002
 ```
 
 ## Testing & Development
 
 ### API Documentation
-- **Swagger UI**: http://localhost:3001/api/docs
+- **Swagger UI**: http://localhost:3002/api/docs
 - **Interactive Testing**: Use Swagger UI with built-in authentication
 
 ### Authentication Setup
 
 **For New Users:**
-1. Navigate to http://localhost:3001/api/docs
+1. Navigate to http://localhost:3002/api/docs
 2. Use `POST /api/auth/register` to create account:
    ```json
    {
@@ -74,7 +74,7 @@ npm run dev
 5. Use returned JWT token for API access
 
 **For Existing Users:**
-1. Navigate to http://localhost:3001/api/docs
+1. Navigate to http://localhost:3002/api/docs
 2. Use `POST /api/auth/send-magic-link` with your email
 3. Check email for magic link and click it
 4. Use `POST /api/auth/verify-magic-link` with the token from the magic link url.

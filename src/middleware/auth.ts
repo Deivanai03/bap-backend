@@ -50,10 +50,7 @@ export function withAuth(handler: (req: AuthenticatedRequest) => Promise<NextRes
   return async (request: NextRequest): Promise<NextResponse> => {
     try {
       const user = await authenticateRequest(request);
-      
-      // Add user to request object
       (request as AuthenticatedRequest).user = user;
-      
       return await handler(request as AuthenticatedRequest);
     } catch (error) {
       if (error instanceof AuthError) {
@@ -62,26 +59,58 @@ export function withAuth(handler: (req: AuthenticatedRequest) => Promise<NextRes
             success: false,
             error: {
               code: error.code,
-              message: error.message,
+              message: error.message
             },
+            meta: {
+              request_id: `req_${Date.now()}`,
+              timestamp: new Date().toISOString(),
+            },
+            errors: [error.message],
           },
-          { status: error.status, headers: corsHeaders() }
+          { 
+            status: error.statusCode,
+            headers: corsHeaders()
+          }
         );
       }
-
-      console.error('Authentication error:', error);
+      
       return NextResponse.json(
         {
           success: false,
           error: {
             code: 'INTERNAL_ERROR',
-            message: 'Internal server error',
+            message: 'Authentication failed'
           },
+          meta: {
+            request_id: `req_${Date.now()}`,
+            timestamp: new Date().toISOString(),
+          },
+          errors: ['Authentication failed'],
         },
-        { status: 500, headers: corsHeaders() }
+        { 
+          status: 500,
+          headers: corsHeaders()
+        }
       );
     }
   };
+}
+
+// Helper function for new APIs
+export async function verifyAuthAndGetUser(request: NextRequest): Promise<{
+  success: boolean;
+  user?: SessionData;
+  error?: string;
+}> {
+  try {
+    const user = await authenticateRequest(request);
+    return { success: true, user };
+  } catch (error) {
+    if (error instanceof AuthError) {
+      return { success: false, error: error.message };
+    }
+    return { success: false, error: 'Authentication failed' };
+  }
 }
 
 export function requireRole(allowedRoles: string[]) {
