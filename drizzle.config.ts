@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import type { Config } from 'drizzle-kit';
 
 export default {
@@ -6,5 +7,6 @@ export default {
   dialect: 'postgresql',
   dbCredentials: {
     url: process.env.DATABASE_URL!,
+    ssl: process.env.DATABASE_URL?.includes('neon.tech') ? 'require' : false,
   },
 } satisfies Config;

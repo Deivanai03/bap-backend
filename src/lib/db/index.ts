@@ -9,6 +9,7 @@ const pool = new Pool({
   idleTimeoutMillis: 30000, // Close idle clients after 30 seconds
   connectionTimeoutMillis: 5000, // Return error after 5 seconds if connection could not be established
   query_timeout: 10000, // Query timeout of 10 seconds
+  ssl: process.env.DATABASE_URL?.includes('neon.tech') ? { rejectUnauthorized: false } : false,
 });
 
 export const db = drizzle(pool, { schema });

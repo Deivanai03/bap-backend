@@ -129,7 +129,7 @@ export async function GET(
       .where(
         and(
           eq(chat_participants.chat_id, chatId),
-          eq(chat_participants.user_id, user.id),
+          eq(chat_participants.user_id, user.user_id),
           eq(chats.org_id, user.org_id)
         )
       )
@@ -215,7 +215,7 @@ export async function POST(
       .where(
         and(
           eq(chat_participants.chat_id, chatId),
-          eq(chat_participants.user_id, user.id),
+          eq(chat_participants.user_id, user.user_id),
           eq(chats.org_id, user.org_id)
         )
       )
@@ -232,7 +232,7 @@ export async function POST(
         .insert(messages)
         .values({
           chat_id: chatId,
-          sender_id: user.id,
+          sender_id: user.user_id,
           content,
           message_type: messageType,
           metadata,
@@ -275,12 +275,19 @@ export async function POST(
 
     // Emit WebSocket event for real-time updates
     if (global.io) {
-      global.io.to(`chat:${chatId}`).emit('new-message', {
+      global.io.to(`chat:${chatId}`).emit('message:new', {
         id: result.id,
+        chatId: chatId,
         content: result.content,
         messageType: result.messageType,
         createdAt: result.createdAt,
-        sender: result.sender,
+        status: 'sent',
+        sender: {
+          id: result.sender.id,
+          name: result.sender.fullName,
+          email: result.sender.email,
+          avatar: result.sender.avatarUrl
+        },
         replyTo: result.replyTo
       });
     }

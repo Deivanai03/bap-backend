@@ -339,6 +339,18 @@ async function seedDatabase() {
         email_verified: true,
         locale: 'en-IN',
         time_zone: 'Asia/Kolkata'
+      },
+      {
+        id: 'b2c3d4e5-f6a7-8901-bcde-f23456789012',
+        org_id: '840d240d-679d-4f16-94ed-2dc23580d20a',
+        email: 'kabilanvelmani@gmail.com',
+        full_name: 'Kabilan Velmani',
+        nickname: 'Kabilan',
+        role: 'ADMIN',
+        status: 'active',
+        email_verified: true,
+        locale: 'en-IN',
+        time_zone: 'Asia/Kolkata'
       }
     ]).onConflictDoNothing();
 

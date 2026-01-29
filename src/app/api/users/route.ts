@@ -84,7 +84,9 @@ import { eq, and, or, ilike, count } from 'drizzle-orm';
  *                               type: integer
  */
 
-// OPTIONS handler removed - server handles CORS globally
+export async function OPTIONS() {
+  return handleOptions();
+}
 
 export async function GET(request: NextRequest) {
   const rateLimitResult = await apiRateLimit(request);

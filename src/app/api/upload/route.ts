@@ -76,15 +76,22 @@ const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 const ALLOWED_TYPES: Record<string, string[]> = {
   image: ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml'],
   video: ['video/mp4', 'video/webm', 'video/quicktime', 'video/x-msvideo'],
-  audio: ['audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/webm', 'audio/mp4'],
+  audio: ['audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/webm', 'audio/mp4', 'audio/x-m4a'],
   document: [
     'application/pdf',
     'application/msword',
     'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.ms-excel',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'application/vnd.ms-powerpoint',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation',
     'text/plain',
     'text/csv',
     'application/json',
     'application/zip',
+    'application/x-zip-compressed',
+    'application/x-rar-compressed',
+    'application/vnd.rar',
   ],
 };
 
@@ -173,11 +180,15 @@ export async function POST(request: NextRequest) {
           upload_status: 'completed'
         });
 
+        // Construct full URL for the uploaded file
+        const baseUrl = process.env.NEXT_PUBLIC_API_URL || process.env.API_URL || 'http://localhost:3001';
+        const fileUrl = `${baseUrl}/uploads/${filename}`;
+
         uploadedFiles.push({
           id: fileId,
           type: fileType,
           name: file.name,
-          url: `/uploads/${filename}`,
+          url: fileUrl,
           size: file.size,
           mimeType: file.type,
         });

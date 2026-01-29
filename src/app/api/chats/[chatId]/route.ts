@@ -141,7 +141,7 @@ export async function GET(
     }
 
     // Check if user is participant
-    const isParticipant = chatData.some(row => row.participants.id === user.id);
+    const isParticipant = chatData.some(row => row.participants.id === user.user_id);
     if (!isParticipant) {
       return createErrorResponse('Chat not found', 404, ApiErrorCode.INSUFFICIENT_PERMISSIONS);
     }
@@ -193,7 +193,7 @@ export async function PUT(
       .where(
         and(
           eq(chat_participants.chat_id, chatId),
-          eq(chat_participants.user_id, user.id),
+          eq(chat_participants.user_id, user.user_id),
           eq(chats.org_id, user.org_id)
         )
       )
@@ -225,7 +225,7 @@ export async function PUT(
           .where(
             and(
               eq(chat_participants.chat_id, chatId),
-              eq(chat_participants.user_id, user.id)
+              eq(chat_participants.user_id, user.user_id)
             )
           );
       }
@@ -267,7 +267,7 @@ export async function DELETE(
         and(
           eq(chats.id, chatId),
           eq(chats.org_id, user.org_id),
-          eq(chat_participants.user_id, user.id)
+          eq(chat_participants.user_id, user.user_id)
         )
       )
       .limit(1);

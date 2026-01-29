@@ -82,7 +82,9 @@ const createLabelSchema = z.object({
   color: z.string().regex(/^#[0-9A-Fa-f]{6}$/, 'Color must be a valid hex color')
 });
 
-// OPTIONS handler removed - server handles CORS globally
+export async function OPTIONS() {
+  return handleOptions();
+}
 
 export async function GET(request: NextRequest) {
   const rateLimitResult = await apiRateLimit(request);
