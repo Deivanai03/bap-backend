@@ -172,8 +172,22 @@ export async function GET(
     // Reverse to show oldest first
     const reversedMessages = chatMessages.reverse();
 
+    // Transform messages to include attachments directly
+    const transformedMessages = reversedMessages.map(msg => {
+      // Extract attachments from metadata
+      const metadata = msg.metadata as any;
+      const attachments = metadata?.attachments || [];
+
+      return {
+        ...msg,
+        attachments,
+        // Also include sender info in expected format
+        senderId: msg.sender.id,
+      };
+    });
+
     return createApiResponse({
-      messages: reversedMessages,
+      messages: transformedMessages,
       pagination: {
         page,
         limit,
@@ -275,11 +289,16 @@ export async function POST(
 
     // Emit WebSocket event for real-time updates
     if (global.io) {
+      // Extract attachments from metadata
+      const messageMetadata = result.metadata as any;
+      const attachments = messageMetadata?.attachments || [];
+
       global.io.to(`chat:${chatId}`).emit('message:new', {
         id: result.id,
         chatId: chatId,
         content: result.content,
         messageType: result.messageType,
+        attachments,
         createdAt: result.createdAt,
         status: 'sent',
         sender: {

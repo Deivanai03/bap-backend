@@ -76,7 +76,18 @@ const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 const ALLOWED_TYPES: Record<string, string[]> = {
   image: ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml'],
   video: ['video/mp4', 'video/webm', 'video/quicktime', 'video/x-msvideo'],
-  audio: ['audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/webm', 'audio/mp4', 'audio/x-m4a'],
+  audio: [
+    'audio/mpeg',
+    'audio/wav',
+    'audio/ogg',
+    'audio/webm',
+    'audio/mp4',
+    'audio/x-m4a',
+    'audio/aac',
+    'audio/flac',
+    'audio/webm;codecs=opus',
+    'audio/ogg;codecs=opus',
+  ],
   document: [
     'application/pdf',
     'application/msword',
@@ -96,8 +107,12 @@ const ALLOWED_TYPES: Record<string, string[]> = {
 };
 
 function getFileType(mimeType: string): 'image' | 'video' | 'audio' | 'document' | null {
+  // Normalize MIME type (remove codec info like ";codecs=opus")
+  const baseMimeType = mimeType.split(';')[0].trim().toLowerCase();
+
   for (const [type, mimes] of Object.entries(ALLOWED_TYPES)) {
-    if (mimes.includes(mimeType)) {
+    // Check exact match or base match
+    if (mimes.some(m => m === mimeType || m === baseMimeType || m.split(';')[0] === baseMimeType)) {
       return type as 'image' | 'video' | 'audio' | 'document';
     }
   }
@@ -171,7 +186,7 @@ export async function POST(request: NextRequest) {
         await db.insert(file_uploads).values({
           id: fileId,
           org_id: user.org_id,
-          user_id: user.id,
+          user_id: user.user_id,
           filename,
           original_name: file.name,
           mime_type: file.type,

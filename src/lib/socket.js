@@ -145,8 +145,12 @@ function initializeSocket(httpServer) {
     socket.on('message:send', async (data, callback) => {
       const { chatId, content, attachments, replyTo } = data;
 
-      if (!chatId || !content) {
-        if (callback) callback({ error: 'Chat ID and content are required' });
+      // Require chatId and either content or attachments
+      const hasContent = content && content.trim().length > 0;
+      const hasAttachments = attachments && attachments.length > 0;
+
+      if (!chatId || (!hasContent && !hasAttachments)) {
+        if (callback) callback({ error: 'Chat ID and content or attachments are required' });
         return;
       }
 
@@ -164,12 +168,28 @@ function initializeSocket(httpServer) {
           return;
         }
 
+        // Determine message type based on content
+        let messageType = 'text';
+        if (hasAttachments && !hasContent) {
+          // Check if it's a voice message
+          const firstAttachment = attachments[0];
+          if (firstAttachment?.type === 'audio') {
+            messageType = 'voice';
+          } else if (firstAttachment?.type === 'image') {
+            messageType = 'image';
+          } else if (firstAttachment?.type === 'video') {
+            messageType = 'video';
+          } else {
+            messageType = 'file';
+          }
+        }
+
         // Create message
         const messageResult = await pool.query(
           `INSERT INTO messages (chat_id, sender_id, content, message_type, metadata, reply_to)
            VALUES ($1, $2, $3, $4, $5, $6)
            RETURNING id, chat_id, sender_id, content, message_type, metadata, reply_to, created_at`,
-          [chatId, userId, content, 'text', attachments ? JSON.stringify({ attachments }) : null, replyTo || null]
+          [chatId, userId, content || '', messageType, attachments ? JSON.stringify({ attachments }) : null, replyTo || null]
         );
 
         const message = messageResult.rows[0];
@@ -194,12 +214,22 @@ function initializeSocket(httpServer) {
         );
         const sender = senderResult.rows[0];
 
+        // Parse metadata if it's a string
+        let parsedMetadata = message.metadata;
+        if (typeof parsedMetadata === 'string') {
+          try {
+            parsedMetadata = JSON.parse(parsedMetadata);
+          } catch (e) {
+            parsedMetadata = null;
+          }
+        }
+
         const messageData = {
           id: message.id,
           chatId: message.chat_id,
           content: message.content,
           messageType: message.message_type,
-          attachments: message.metadata?.attachments || attachments || [],
+          attachments: parsedMetadata?.attachments || attachments || [],
           replyTo: message.reply_to,
           createdAt: message.created_at,
           status: 'sent',
