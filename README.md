@@ -24,18 +24,25 @@ npm install
 
 # Setup environment variables
 cp .env.example .env
+# Edit .env with your database credentials
 ```
 
 ### Database Setup
 
 ```bash
-# For shared cloud database
-# Note: Database is already seeded with test data - no setup required
+# Create PostgreSQL database
+createdb bap_db
 
-# For local development setup (optional)
+# Generate database schema
 npm run db:generate
+
+# Run migrations
 npm run db:migrate
-psql "postgresql://bap_user:<password>@localhost:5432/bap_db" -f src/lib/db/setup-rls.sql
+
+# Setup Row Level Security
+psql "postgresql://postgres:postgres@localhost:5432/bap_db" -f src/lib/db/setup-rls.sql
+
+# Seed database with test data
 npm run seed
 ```
 
@@ -45,19 +52,19 @@ npm run seed
 # Start development server
 npm run dev
 
-# Server will run on http://localhost:3002
+# Server will run on http://localhost:3001
 ```
 
 ## Testing & Development
 
 ### API Documentation
-- **Swagger UI**: http://localhost:3002/api/docs
+- **Swagger UI**: http://localhost:3001/api/docs
 - **Interactive Testing**: Use Swagger UI with built-in authentication
 
 ### Authentication Setup
 
 **For New Users:**
-1. Navigate to http://localhost:3002/api/docs
+1. Navigate to http://localhost:3001/api/docs
 2. Use `POST /api/auth/register` to create account:
    ```json
    {
@@ -74,7 +81,7 @@ npm run dev
 5. Use returned JWT token for API access
 
 **For Existing Users:**
-1. Navigate to http://localhost:3002/api/docs
+1. Navigate to http://localhost:3001/api/docs
 2. Use `POST /api/auth/send-magic-link` with your email
 3. Check email for magic link and click it
 4. Use `POST /api/auth/verify-magic-link` with the token from the magic link url.
@@ -97,7 +104,7 @@ npm run dev
 #### Core Tables
 - `organizations` - Tenant entities with billing and regional configuration
 - `users` - User accounts with roles and preferences  
-- `user_sessions` - Active sessions with device tracking
+- `user_sessions` - Active sessions with device tracking and security
 - `audit_events` - Comprehensive security audit log
 
 #### Billing Tables
@@ -137,12 +144,27 @@ The authentication system is fully implemented with enterprise-grade security:
 - Comprehensive error handling with structured error codes
 - Request/response logging for security monitoring
 - Device fingerprinting for fraud detection
+- Automatic session cleanup to prevent duplicate sessions
 
 ### Authentication Flow
 - **Registration**: User submits registration data → Magic link sent to email → Email verification → User/org creation + JWT session token returned
 - **Login**: Existing users request magic link → Magic link sent to email → Email verification → JWT session token returned  
 - **Verification**: Single endpoint handles both registration and login magic link tokens
 
+## Session Management
+
+### Features Implemented
+- **Device Tracking** - Automatic detection of browser, OS, device type from user agent
+- **IP Address Logging** - Client IP tracking for security monitoring
+- **Session Deduplication** - Prevents multiple sessions from same device
+- **Automatic Cleanup** - Removes expired and duplicate sessions
+- **Device Fingerprinting** - Consistent device_id generation based on user agent + IP
+
+### Session APIs
+- `GET /api/sessions` - List user's active sessions with device details
+- `DELETE /api/sessions/[id]` - Revoke specific session
+- `POST /api/auth/refresh` - Refresh JWT token using refresh token
+- `POST /api/auth/logout` - Logout and revoke current session
 
 ## Billing Module
 
@@ -173,6 +195,11 @@ The billing system integrates with Stripe for payment processing:
 - `POST /api/auth/refresh` - Refresh JWT token using refresh token
 - `POST /api/auth/logout` - Logout and revoke session
 - `GET /api/auth/me` - Get current user profile and permissions (includes onboarding status)
+- `PUT /api/auth/me` - Update user profile information
+
+### Session Management
+- `GET /api/sessions` - List user's active sessions with device information
+- `DELETE /api/sessions/[id]` - Revoke specific session
 
 ### Onboarding
 - `POST /api/auth/onboarding/complete` - Complete onboarding process with organization and user data
@@ -214,7 +241,7 @@ All API responses follow this standardized structure:
   "data": { ... },
   "meta": {
     "request_id": "req_abc123",
-    "timestamp": "2026-01-13T10:30:00Z"
+    "timestamp": "2026-01-30T10:30:00Z"
   },
   "errors": []
 }
@@ -231,7 +258,7 @@ Error responses include structured error codes:
   },
   "meta": {
     "request_id": "req_abc123",
-    "timestamp": "2026-01-13T10:30:00Z"
+    "timestamp": "2026-01-30T10:30:00Z"
   },
   "errors": ["Access denied"]
 }
@@ -249,8 +276,28 @@ Error responses include structured error codes:
 - **Billing operations**: OWNER only (subscription upgrade)
 - **Usage metrics**: All authenticated users
 - **Plan-based visibility**: Individual vs Business/Enterprise plan access
+- **Session management**: Users can only manage their own sessions
 
 ### Permission Infrastructure
 - RBAC middleware available for future endpoint implementation
 - Role hierarchy and permission matrix defined
 - Ready for user management and audit log endpoints
+
+## Development Scripts
+
+```bash
+# Database
+npm run db:generate    # Generate schema changes
+npm run db:migrate     # Run migrations
+npm run db:studio      # Open Drizzle Studio
+npm run seed          # Seed database with test data
+
+# Development
+npm run dev           # Start development server
+npm run build         # Build for production
+npm run start         # Start production server
+
+# Testing
+npm run test          # Run tests (when implemented)
+npm run lint          # Run ESLint
+```

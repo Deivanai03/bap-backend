@@ -18,7 +18,21 @@ export async function createSession(sessionData: SessionData): Promise<CreateSes
   await setTenantContext(sessionData.org_id);
 
   return await db.transaction(async (tx) => {
-    // Create session record
+    // Revoke existing sessions for the same device to prevent duplicates
+    if (sessionData.device_id) {
+      await tx.update(user_sessions)
+        .set({
+          is_active: false,
+          revoked_at: new Date(),
+        })
+        .where(and(
+          eq(user_sessions.user_id, sessionData.user_id),
+          eq(user_sessions.device_id, sessionData.device_id),
+          eq(user_sessions.is_active, true)
+        ));
+    }
+
+    // Create new session record
     const [session] = await tx.insert(user_sessions).values({
       user_id: sessionData.user_id,
       org_id: sessionData.org_id,
@@ -261,6 +275,31 @@ export async function cleanupExpiredSessions(): Promise<number> {
       eq(user_sessions.is_active, true),
       sql`${user_sessions.expires_at} < NOW()`
     ));
+
+  return result.rowCount || 0;
+}
+
+export async function cleanupOldSessions(userId: string, keepCount: number = 5): Promise<number> {
+  // Keep only the most recent N sessions per user
+  const oldSessions = await db.select({ id: user_sessions.id })
+    .from(user_sessions)
+    .where(and(
+      eq(user_sessions.user_id, userId),
+      eq(user_sessions.is_active, true)
+    ))
+    .orderBy(sql`${user_sessions.last_activity_at} DESC`)
+    .offset(keepCount);
+
+  if (oldSessions.length === 0) return 0;
+
+  const oldSessionIds = oldSessions.map(s => s.id);
+  
+  const result = await db.update(user_sessions)
+    .set({
+      is_active: false,
+      revoked_at: new Date(),
+    })
+    .where(sql`${user_sessions.id} = ANY(${oldSessionIds})`);
 
   return result.rowCount || 0;
 }

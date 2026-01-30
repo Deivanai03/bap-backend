@@ -48,6 +48,9 @@ CREATE INDEX IF NOT EXISTS idx_users_magic_link ON users(magic_link_token) WHERE
 -- Unique email per org (from documentation)
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_org_email ON users(org_id, LOWER(email)) WHERE deleted_at IS NULL;
 
+-- Global email uniqueness constraint (matches schema.ts definition)
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_global ON users(LOWER(email)) WHERE deleted_at IS NULL;
+
 CREATE INDEX IF NOT EXISTS idx_user_sessions_user ON user_sessions(user_id, is_active);
 CREATE INDEX IF NOT EXISTS idx_user_sessions_token ON user_sessions(session_token) WHERE is_active = TRUE;
 CREATE INDEX IF NOT EXISTS idx_user_sessions_expires ON user_sessions(expires_at) WHERE is_active = TRUE;

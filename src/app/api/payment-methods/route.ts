@@ -99,25 +99,44 @@ async function getPaymentMethods(request: AuthenticatedRequest) {
       return createApiResponse([]);
     }
 
-    // Get payment methods from Stripe
-    const stripePaymentMethods = await getStripePaymentMethods(subscription[0].stripe_customer_id);
-    
-    if (!stripePaymentMethods) {
-      return createErrorResponse('Failed to fetch payment methods', 500);
-    }
+    // Get payment methods from database
+    const dbPaymentMethods = await db
+      .select({
+        id: payment_methods.id,
+        stripe_payment_method_id: payment_methods.stripe_payment_method_id,
+        type: payment_methods.type,
+        card_brand: payment_methods.card_brand,
+        card_last4: payment_methods.card_last4,
+        card_exp_month: payment_methods.card_exp_month,
+        card_exp_year: payment_methods.card_exp_year,
+        bank_name: payment_methods.bank_name,
+        bank_last4: payment_methods.bank_last4,
+        is_default: payment_methods.is_default,
+        is_verified: payment_methods.is_verified,
+        created_at: payment_methods.created_at
+      })
+      .from(payment_methods)
+      .where(
+        and(
+          eq(payment_methods.org_id, request.user.org_id),
+          isNull(payment_methods.deleted_at)
+        )
+      )
+      .orderBy(payment_methods.created_at);
 
-    const paymentMethodsList = stripePaymentMethods.data.map(pm => ({
-      id: pm.id,
+    const paymentMethodsList = dbPaymentMethods.map(pm => ({
+      id: pm.id, // Database UUID
+      stripe_payment_method_id: pm.stripe_payment_method_id, // Stripe ID
       type: pm.type,
-      card_brand: pm.card?.brand || null,
-      card_last4: pm.card?.last4 || null,
-      card_exp_month: pm.card?.exp_month || null,
-      card_exp_year: pm.card?.exp_year || null,
-      bank_name: pm.us_bank_account?.bank_name || null,
-      bank_last4: pm.us_bank_account?.last4 || null,
-      is_default: false,
-      is_verified: true,
-      created_at: new Date(pm.created * 1000)
+      card_brand: pm.card_brand,
+      card_last4: pm.card_last4,
+      card_exp_month: pm.card_exp_month,
+      card_exp_year: pm.card_exp_year,
+      bank_name: pm.bank_name,
+      bank_last4: pm.bank_last4,
+      is_default: pm.is_default,
+      is_verified: pm.is_verified,
+      created_at: pm.created_at
     }));
 
     // Audit log

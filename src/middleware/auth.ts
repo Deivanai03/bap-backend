@@ -4,6 +4,7 @@ import { verifyToken } from '../lib/auth/jwt';
 import { setTenantContext } from '../lib/db';
 import { SessionData, AuthError, DeviceInfo } from '../types';
 import { corsHeaders } from '../lib/api/cors';
+import crypto from 'crypto';
 
 export interface AuthenticatedRequest extends NextRequest {
   user: SessionData;
@@ -140,10 +141,14 @@ export function extractDeviceInfo(request: NextRequest, deviceData?: any): Devic
              request.headers.get('x-real-ip') || 
              request.ip;
 
+  // Generate consistent device_id based on user agent and IP
+  const deviceFingerprint = `${userAgent}-${ip}`;
+  const deviceId = crypto.createHash('sha256').update(deviceFingerprint).digest('hex').substring(0, 32);
+
   // If frontend provides device data, use it
   if (deviceData) {
     return {
-      device_id: deviceData.device_id,
+      device_id: deviceData.device_id || deviceId,
       device_type: detectDeviceType(deviceData.user_agent || userAgent),
       device_name: `${detectBrowser(deviceData.user_agent || userAgent)} on ${detectOS(deviceData.user_agent || userAgent)}`,
       os: detectOS(deviceData.user_agent || userAgent),
@@ -155,6 +160,7 @@ export function extractDeviceInfo(request: NextRequest, deviceData?: any): Devic
 
   // Fallback to basic detection from headers
   return {
+    device_id: deviceId,
     device_type: detectDeviceType(userAgent),
     device_name: `${detectBrowser(userAgent)} on ${detectOS(userAgent)}`,
     os: detectOS(userAgent),
